@@ -1,0 +1,8 @@
+# runtime / local state — never publish
+keys.json
+*.log
+mimo-free-client
+node_modules/
+.DS_Store
+proxy.json
+proxy.port
