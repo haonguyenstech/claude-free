@@ -9,7 +9,7 @@ const http = require("http");
 const https = require("https");
 const readline = require("readline");
 
-const VERSION = "1.2.3";
+const VERSION = "1.2.4";
 const DIR = __dirname;
 // No fixed port by default — the proxy binds an OS-assigned free port and records it in proxy.json,
 // so claude-free never collides with whatever else you're running. Set CLAUDE_FREE_PORT to force one.
@@ -271,6 +271,14 @@ async function main() {
     ANTHROPIC_SMALL_FAST_MODEL: SMALL_MODEL,
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
   };
+  // Fully release stdin before handing it to claude. The picker left Node's readline reading
+  // keystrokes; if we don't detach, Node and claude both read the same TTY and typed characters
+  // get split between them — they look "lost" while typing in Claude Code.
+  if (process.stdin.isTTY) { try { process.stdin.setRawMode(false); } catch {} }
+  process.stdin.removeAllListeners("keypress");
+  process.stdin.removeAllListeners("data");
+  process.stdin.pause();
+
   const isWin = process.platform === "win32";
   const child = spawn("claude", args, { stdio: "inherit", env, shell: isWin });
   child.on("error", (e) => {
