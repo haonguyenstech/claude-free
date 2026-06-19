@@ -3,8 +3,11 @@
 //   - Zen free models (deepseek-v4-flash-free, big-pickle, ...)  -> opencode.ai, empty bearer
 //   - mimo-auto                                                  -> Xiaomi free endpoint (self-bootstrapped JWT)
 //   - gemini-*                                                   -> Google AI Studio (client key)
+//   - zenmux/<vendor/model>                                      -> ZenMux (client key, NATIVE Anthropic — passthrough)
 //   - vendor/model[:free]                                        -> OpenRouter (client key)
 // Translates Anthropic request -> OpenAI, and OpenAI response (incl. streaming SSE) -> Anthropic.
+// Exception: ZenMux already speaks the Anthropic Messages API, so its requests are passed through
+// untouched (no OpenAI round-trip) — preserving native streaming, tools, and the 1M context window.
 const http = require("http");
 const https = require("https");
 const fs = require("fs");
@@ -30,6 +33,29 @@ const MODEL = DEFAULT_MODEL;
 const MIMO_HOST = "api.xiaomimimo.com";
 const MIMO_CHAT_PATH = "/api/free-ai/openai/chat";
 const MIMO_BOOTSTRAP_PATH = "/api/free-ai/bootstrap";
+// Neutral public aliases (pro/<name>) -> real subscription model ids. Keeps the gateway/provider
+// out of the model name Claude Code displays and out of the picker.
+const ZENMUX_WEB = {
+  // free ZenMux models — billed $0 via payg (see zenmuxWebPassthrough), still need the web cookie
+  "glm-5.2-free":      "z-ai/glm-5.2-free",
+  "kimi-k2.7-free":    "moonshotai/kimi-k2.7-code-free",
+  "step-3.7-free":     "stepfun/step-3.7-flash-free",
+  "glm-4.7-free":      "z-ai/glm-4.7-flash-free",
+  // paid subscription models
+  "glm-5.2":           "z-ai/glm-5.2",
+  "qwen3.7-max":       "qwen/qwen3.7-max",
+  "kimi-k2.7-code-hs": "moonshotai/kimi-k2.7-code-highspeed",
+  "grok-4.3":          "x-ai/grok-4.3",
+  "step-3.7-flash":    "stepfun/step-3.7-flash",
+  "deepseek-v4-pro":   "deepseek/deepseek-v4-pro",
+  "gemini-3.1-pro":    "google/gemini-3.1-pro-preview",
+  "kimi-k2.7-code":    "moonshotai/kimi-k2.7-code",
+  "qwen3.7-plus":      "qwen/qwen3.7-plus",
+  "deepseek-v4-flash": "deepseek/deepseek-v4-flash",
+  "glm-4.7":           "z-ai/glm-4.7",
+  "minimax-m3":        "minimax/minimax-m3",
+};
+
 let _mimoJwt = null, _mimoExp = 0;
 function mimoFingerprint() {
   // 1) reuse mimocode CLI's fingerprint (mac/linux and Windows locations)
@@ -78,6 +104,11 @@ function parseModel(m) {
   m = m || "";
   const think = m.endsWith(":think");
   const base = think ? m.slice(0, -6) : m;
+  // Neutral public alias for subscription models, e.g. pro/deepseek-v4-pro -> real model id.
+  if (base.startsWith("pro/")) { const s = base.slice(4); return { model: ZENMUX_WEB[s] || s, think, backend: "zenmuxweb" }; }
+  // zenmux*/ prefixes win over the generic vendor/model rule below. Strip -> real ZenMux model id.
+  if (base.startsWith("zenmuxweb/")) return { model: base.slice(10), think, backend: "zenmuxweb" };
+  if (base.startsWith("zenmux/")) return { model: base.slice(7), think, backend: "zenmux" };
   if (base === "mimo-auto" || base === "mimo/mimo-auto") return { model: "mimo-auto", think, backend: "mimo" };
   if (base.startsWith("gemini")) return { model: base, think, backend: "gemini" };
   if (base.includes("/")) return { model: base, think, backend: "openrouter" };
@@ -238,6 +269,124 @@ function streamTranslate(res, upstream, msgId, model, inputTokens) {
   upstream.on("error", () => { try { start(); ev(res, "message_stop", {}); res.end(); } catch {} });
 }
 
+// ZenMux web-session cookie (subscription auth). Read fresh per request so re-pasting the cookie
+// in keys.json takes effect without restarting the proxy. Env var wins over the file.
+function loadCookie() {
+  if (process.env.ZENMUX_COOKIE) return process.env.ZENMUX_COOKIE;
+  try { return JSON.parse(fs.readFileSync(pathMod.join(__dirname, "keys.json"), "utf8")).zenmux_cookie || ""; }
+  catch { return ""; }
+}
+
+// ZenMux *subscription* passthrough via the web session. Same native Anthropic passthrough as the
+// API-key path, but authenticates with the logged-in browser cookie + the headers the web app sends
+// (origin/referer/UA + x-zenmux-apikey-source: subscription). Cookies are short-lived — when they
+// expire ZenMux returns 401/403 and you re-copy the cookie into keys.json (zenmux_cookie).
+// Rewrite upstream error bodies into friendly, provider-neutral messages.
+// Strips the gateway name / docs URL and gives an actionable hint per status code.
+function friendlyError(status, rawBody) {
+  let upstream = "";
+  try { const j = JSON.parse(rawBody); upstream = (j && j.error && j.error.message) || ""; } catch {}
+  let type = "api_error", message;
+  if (status === 402) {
+    type = "rate_limit_error";
+    message = "⚠️  Subscription quota reached for this model. It refreshes on a rolling window — wait a bit, or pick another model from the launcher (Ctrl-C and run claude-free again).";
+  } else if (status === 401 || status === 403) {
+    type = "authentication_error";
+    message = "🔑  Session expired. Refresh your subscription cookie (re-copy it from the browser into keys.json), then relaunch.";
+  } else if (status === 429) {
+    type = "rate_limit_error";
+    message = "🐢  Rate limited — too many requests right now. Wait a few seconds and try again, or switch to a different model.";
+  } else if (status === 404) {
+    type = "not_found_error";
+    message = "🚫  This model isn't available on your plan. Pick another one from the launcher.";
+  } else if (status >= 500) {
+    type = "api_error";
+    message = "🛠️  The model is temporarily unavailable upstream. Try again in a moment or switch models.";
+  } else {
+    message = "Request failed (HTTP " + status + ")." + (upstream ? " " + upstream.replace(/https?:\/\/\S+/g, "").trim() : "");
+  }
+  return JSON.stringify({ type: "error", error: { type, message } });
+}
+
+// Write an error response ONLY if streaming hasn't already begun. Once headers are sent
+// (e.g. an SSE stream is mid-flight), writeHead throws ERR_HTTP_HEADERS_SENT — which, in a
+// bare upstream "error" handler, is an uncaught exception that crashes the whole proxy.
+function safeError(res, status, message) {
+  if (res.headersSent || res.writableEnded) { try { res.end(); } catch {} return; }
+  try {
+    res.writeHead(status, { "content-type": "application/json" });
+    res.end(JSON.stringify({ type: "error", error: { type: "api_error", message } }));
+  } catch {}
+}
+
+// Pipe a successful upstream response straight through, but buffer error responses (>=400)
+// so we can replace the raw provider message with a friendly one.
+function pipeOrRewrite(ures, res) {
+  const h = { "content-type": ures.headers["content-type"] || "application/json" };
+  if (ures.headers["cache-control"]) h["cache-control"] = ures.headers["cache-control"];
+  const status = ures.statusCode || 200;
+  // A mid-stream upstream socket error must not throw past the pipe — just end the client stream.
+  if (status < 400) { res.writeHead(status, h); ures.on("error", () => { try { res.end(); } catch {} }); ures.pipe(res); return; }
+  let body = "";
+  ures.on("data", (c) => { body += c.toString("utf8"); });
+  ures.on("end", () => {
+    res.writeHead(status, { "content-type": "application/json" });
+    res.end(friendlyError(status, body));
+  });
+}
+
+function zenmuxWebPassthrough(req, res, areq, realModel) {
+  const cookie = loadCookie();
+  if (!cookie) {
+    res.writeHead(401, { "content-type": "application/json" });
+    res.end(JSON.stringify({ type: "error", error: { type: "authentication_error",
+      message: "no ZenMux session cookie — set ZENMUX_COOKIE or add \"zenmux_cookie\" to keys.json" } }));
+    return;
+  }
+  areq.model = realModel;
+  const payload = Buffer.from(JSON.stringify(areq), "utf8");
+  const headers = {
+    "content-type": "application/json",
+    "content-length": payload.length,
+    "anthropic-version": req.headers["anthropic-version"] || "2023-06-01",
+    cookie,
+    origin: "https://zenmux.ai",
+    referer: "https://zenmux.ai/platform/chat",
+    "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+    "x-zenmux-accept-processing": "true, true",
+    // Free ZenMux models bill $0 on pay-as-you-go and have no subscription quota, so route them
+    // through "payg" (the web chat does the same). Paid models use the logged-in subscription.
+    "x-zenmux-apikey-source": realModel.endsWith("-free") ? "payg" : "subscription",
+  };
+  const ureq = https.request({ host: "zenmux.ai", port: 443, method: "POST", path: "/api/anthropic/v1/messages", headers }, (ures) => {
+    pipeOrRewrite(ures, res);
+  });
+  ureq.setTimeout(120000, () => ureq.destroy(new Error("upstream timeout after 120s")));
+  ureq.on("error", (e) => safeError(res, 502, "🛠️  Couldn't reach the model: " + e.message));
+  ureq.write(payload); ureq.end();
+}
+
+// ZenMux passthrough: it implements the Anthropic Messages API directly, so we forward the original
+// Anthropic request verbatim (only swapping the model id to drop the "zenmux/" prefix) and pipe the
+// native response — JSON or SSE — straight back. No toOpenAI/toAnthropic translation, so streaming,
+// tool calls, thinking, and the 1M context window all work natively.
+function zenmuxPassthrough(req, res, areq, realModel) {
+  areq.model = realModel;
+  const payload = Buffer.from(JSON.stringify(areq), "utf8");
+  const headers = {
+    "content-type": "application/json",
+    "content-length": payload.length,
+    authorization: req.headers.authorization || "Bearer ",
+    "anthropic-version": req.headers["anthropic-version"] || "2023-06-01",
+  };
+  const ureq = https.request({ host: "zenmux.ai", port: 443, method: "POST", path: "/api/anthropic/v1/messages", headers }, (ures) => {
+    pipeOrRewrite(ures, res);
+  });
+  ureq.setTimeout(120000, () => ureq.destroy(new Error("upstream timeout after 120s")));
+  ureq.on("error", (e) => safeError(res, 502, "🛠️  Couldn't reach the model: " + e.message));
+  ureq.write(payload); ureq.end();
+}
+
 function callBackend(route, authHeader, oaBody, onResponse, onError) {
   const payload = Buffer.from(JSON.stringify(oaBody), "utf8");
   const headers = { "content-type": "application/json", authorization: authHeader, "content-length": payload.length };
@@ -270,6 +419,8 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   const parsed = parseModel(areq.model);
+  if (parsed.backend === "zenmuxweb") { zenmuxWebPassthrough(req, res, areq, parsed.model); return; }
+  if (parsed.backend === "zenmux") { zenmuxPassthrough(req, res, areq, parsed.model); return; }
   const oaBody = toOpenAI(areq);
   oaBody.stream = !!areq.stream;
   if (oaBody.stream) oaBody.stream_options = { include_usage: true };
@@ -316,17 +467,26 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify(toAnthropic(o)));
       });
     }
-  }, (e) => {
-    res.writeHead(502, { "content-type": "application/json" });
-    res.end(JSON.stringify({ type: "error", error: { type: "api_error", message: e.message } }));
-  });
+  }, (e) => safeError(res, 502, e.message));
 });
+
+// Content hash of this proxy's own source, so claude-free can detect when the running
+// proxy is stale (source on disk changed) and auto-restart it.
+function selfHash() {
+  try { return crypto.createHash("sha256").update(fs.readFileSync(__filename)).digest("hex").slice(0, 16); }
+  catch { return ""; }
+}
 
 server.listen(PORT, "127.0.0.1", () => {
   const actual = server.address().port;
-  try { fs.writeFileSync(STATE_FILE, JSON.stringify({ port: actual, pid: process.pid })); } catch {}
+  try { fs.writeFileSync(STATE_FILE, JSON.stringify({ port: actual, pid: process.pid, srcHash: selfHash() })); } catch {}
   console.log(`claude-proxy on http://127.0.0.1:${actual} (free models)`);
 });
+// Last-resort backstop: a stray async error (e.g. an upstream socket dying mid-stream) must never
+// take the whole proxy down and strand every other model. Log and keep serving.
+process.on("uncaughtException", (e) => { try { console.error("uncaught:", e && e.message); } catch {} });
+process.on("unhandledRejection", (e) => { try { console.error("unhandled:", e && (e.message || e)); } catch {} });
+
 // Clean up the state file on a graceful stop (SIGTERM from `claude-free --stop`, Ctrl-C, normal exit).
 const cleanup = () => { try { fs.unlinkSync(STATE_FILE); } catch {} };
 process.on("exit", cleanup);

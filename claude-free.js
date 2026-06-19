@@ -7,9 +7,10 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 const https = require("https");
+const crypto = require("crypto");
 const readline = require("readline");
 
-const VERSION = "1.2.4";
+const VERSION = "1.3.0";
 const DIR = __dirname;
 // No fixed port by default — the proxy binds an OS-assigned free port and records it in proxy.json,
 // so claude-free never collides with whatever else you're running. Set CLAUDE_FREE_PORT to force one.
@@ -21,16 +22,65 @@ const SMALL_MODEL = "deepseek-v4-flash-free";
 // Where --update pulls the latest files from (override with CLAUDE_FREE_BASE).
 const UPDATE_BASE = process.env.CLAUDE_FREE_BASE || "https://raw.githubusercontent.com/haonguyenstech/claude-free/main";
 
-// [menu label, model id, key service or null]
+// Model catalog. tier groups the picker; tps is from the local benchmark (tokens/sec, single-sample,
+// rough), ctx is the context window, star marks the recommended pick in each tier. Ordered by tps.
+// { name, id, key (service or null), tier, ctx, tps, note, star }
 const MODELS = [
-  ["⭐ DeepSeek V4 Flash  — fast, clean (recommended default)",                  "deepseek-v4-flash-free", null],
-  ["Big Pickle          — stealth model, fast & clean",                         "big-pickle",             null],
-  ["North Mini Code     — fast coding model",                                   "north-mini-code-free",   null],
-  ["MiMo V2.5           — reasoning model (shows thinking)",                     "mimo-v2.5-free",         null],
-  ["Nemotron 3 Ultra    — 550B, deepest but slowest",                           "nemotron-3-ultra-free",  null],
-  ["MiMo Auto           — FREE via Xiaomi, MiMo-V2.5 1M ctx (no key)",           "mimo-auto",              null],
-  ["Gemini 2.5 Flash    — FREE via Google AI Studio, 1M ctx, reliable (needs key)", "gemini-2.5-flash",   "gemini"],
+  // --- FREE · no key needed --- (tps re-measured 2026-06-19: median of 3, 512-tok sustained, end-to-end via proxy)
+  { name: "Big Pickle",        id: "big-pickle",            key: null, tier: "free", ctx: "",   tps: 111, note: "stealth, fast & clean" },
+  { name: "MiMo Auto",         id: "mimo-auto",             key: null, tier: "free", ctx: "1M", tps: 108, note: "free, no key" },
+  { name: "DeepSeek V4 Flash", id: "deepseek-v4-flash-free",key: null, tier: "free", ctx: "",   tps: 107, note: "fast, clean · small model" },
+  { name: "North Mini Code",   id: "north-mini-code-free",  key: null, tier: "free", ctx: "",   tps: 96,  note: "fast coding model",        star: true },
+  { name: "MiMo V2.5",         id: "mimo-v2.5-free",        key: null, tier: "free", ctx: "",   tps: 85,  note: "reasoning (shows thinking)" },
+  { name: "Nemotron 3 Ultra",  id: "nemotron-3-ultra-free", key: null, tier: "free", ctx: "",   tps: 10,  note: "550B, deepest · slow" },
+  // --- ZenMux free models: $0 (payg, no quota) but need the web cookie like the pro models ---
+  { name: "Step 3.7 Flash",    id: "pro/step-3.7-free",     key: "sub", tier: "zfree", ctx: "256K", tps: 100, note: "thinking-heavy · variable · free" },
+  { name: "GLM 4.7 Flash",     id: "pro/glm-4.7-free",      key: "sub", tier: "zfree", ctx: "200K", tps: 57,  note: "fast & clean · free" },
+  { name: "Kimi K2.7 Code",    id: "pro/kimi-k2.7-free",    key: "sub", tier: "zfree", ctx: "256K", tps: 54,  note: "coding · fast · free",      star: true },
+  { name: "GLM 5.2 Free",      id: "pro/glm-5.2-free",      key: "sub", tier: "zfree", ctx: "1M",   tps: 42,  note: "flagship · newest · free" },
+  // --- subscription models (cookie-authenticated; neutral pro/ aliases resolved by the proxy) ---
+  { name: "Step 3.7 Flash",    id: "pro/step-3.7-flash",    key: "sub", tier: "pro", ctx: "256K", tps: 98, note: "fastest, thinking-heavy" },
+  { name: "Kimi K2.7 Code",    id: "pro/kimi-k2.7-code",    key: "sub", tier: "pro", ctx: "256K", tps: 77, note: "strong coding" },
+  { name: "DeepSeek V4 Flash", id: "pro/deepseek-v4-flash", key: "sub", tier: "pro", ctx: "1M",   tps: 74, note: "fast" },
+  { name: "DeepSeek V4 Pro",   id: "pro/deepseek-v4-pro",   key: "sub", tier: "pro", ctx: "1M",   tps: 71, note: "best balance" },
+  { name: "Gemini 3.1 Pro",    id: "pro/gemini-3.1-pro",    key: "sub", tier: "pro", ctx: "1M",   tps: 69, note: "flagship · slow TTFT" },
+  { name: "MiniMax M3",        id: "pro/minimax-m3",        key: "sub", tier: "pro", ctx: "512K", tps: 67, note: "concise" },
+  { name: "Qwen3.7 Plus",      id: "pro/qwen3.7-plus",      key: "sub", tier: "pro", ctx: "1M",   tps: 54, note: "verbose, thorough" },
+  { name: "GLM 4.7",           id: "pro/glm-4.7",           key: "sub", tier: "pro", ctx: "200K", tps: 52, note: "fast & clean" },
+  { name: "Qwen3.7 Max",       id: "pro/qwen3.7-max",       key: "sub", tier: "pro", ctx: "1M",   tps: 0,  note: "PAYG only · not in plan" },
+  { name: "Kimi K2.7 Code HS", id: "pro/kimi-k2.7-code-hs", key: "sub", tier: "pro", ctx: "256K", tps: 0,  note: "PAYG only · not in plan" },
+  { name: "Grok 4.3",          id: "pro/grok-4.3",          key: "sub", tier: "pro", ctx: "1M",   tps: 0,  note: "PAYG only · not in plan" },
 ];
+
+const TIER_LABEL = {
+  free:  "  \x1b[1;38;5;208mFREE\x1b[0m \x1b[2m· no key needed\x1b[0m",
+  zfree: "  \x1b[1;38;5;208mFREE PRO\x1b[0m \x1b[2m· Free\x1b[0m",
+  pro:   "  \x1b[1;38;5;39mPRO\x1b[0m \x1b[2m· subscription\x1b[0m",
+};
+// Temporarily hide whole tiers from the picker/--models (models still launch by id). To restore
+// the PRO group, just empty this set: const HIDE_TIERS = new Set();
+const HIDE_TIERS = new Set(["pro"]);
+// One model row. Selected rows are drawn in reverse video (no inner color, so the highlight is solid);
+// unselected rows color the speed badge by throughput (green fast / yellow mid / dim slow).
+function fmtRow(m, sel) {
+  const star = m.star ? "⭐" : "  ";
+  const name = m.name.padEnd(18);
+  const tps = ((m.tps || "?") + " tok/s").padStart(10);
+  const ctx = (m.ctx || "").padStart(5);
+  if (sel) return `\x1b[7m ❯ ${star} ${name}${tps}  ${ctx}  ${m.note} \x1b[0m`;
+  const c = m.tps >= 50 ? 32 : m.tps >= 25 ? 33 : 90;
+  return `    ${star} ${name}\x1b[${c}m${tps}\x1b[0m  \x1b[90m${ctx}\x1b[0m  \x1b[90m${m.note}\x1b[0m`;
+}
+// Build the grouped entry list for menuRich: a spacer + label header at each tier change, then rows.
+function modelMenuEntries() {
+  const entries = []; let tier = null;
+  MODELS.forEach((m, i) => {
+    if (HIDE_TIERS.has(m.tier)) return;
+    if (m.tier !== tier) { entries.push({ header: "" }); entries.push({ header: TIER_LABEL[m.tier] }); tier = m.tier; }
+    entries.push({ value: i, render: (sel) => fmtRow(m, sel) });
+  });
+  return entries;
+}
 
 function loadKeys() { try { return JSON.parse(fs.readFileSync(KEYS_FILE, "utf8")); } catch { return {}; } }
 function saveKeys(k) { try { fs.writeFileSync(KEYS_FILE, JSON.stringify(k, null, 2)); } catch {} }
@@ -82,7 +132,52 @@ function menu(title, items) {
   });
 }
 
+// Grouped single-select menu. `entries` is an ordered mix of:
+//   { header: text }                  — non-selectable label/spacer (skipped by navigation)
+//   { value, render(selected) }       — selectable row; `value` is returned on Enter
+// Returns the chosen entry's `value`, or -1 if cancelled. Same in-place redraw as menu().
+function menuRich(title, entries) {
+  const pick = entries.map((e, i) => (e.header === undefined ? i : -1)).filter((i) => i >= 0);
+  return new Promise((resolve) => {
+    let pos = 0;
+    const stdin = process.stdin;
+    const render = (first) => {
+      const lines = [`\x1b[1m${title}\x1b[0m  \x1b[2m↑/↓ move · enter select · q quit\x1b[0m`];
+      entries.forEach((e, i) => lines.push(e.header === undefined ? e.render(i === pick[pos]) : e.header));
+      if (!first) process.stdout.write(`\x1b[${lines.length - 1}A`);
+      process.stdout.write("\r" + lines.map((l) => l + "\x1b[K").join("\n"));
+    };
+    readline.emitKeypressEvents(stdin);
+    if (stdin.isTTY) stdin.setRawMode(true);
+    process.stdout.write("\x1b[?25l");
+    render(true);
+    const done = (val) => {
+      stdin.removeListener("keypress", onKey);
+      if (stdin.isTTY) stdin.setRawMode(false);
+      process.stdout.write("\x1b[?25h\n");
+      resolve(val);
+    };
+    const onKey = (str, key) => {
+      if (!key) return;
+      if (key.name === "up" || key.name === "k") pos = (pos - 1 + pick.length) % pick.length;
+      else if (key.name === "down" || key.name === "j") pos = (pos + 1) % pick.length;
+      else if (key.name === "return") return done(entries[pick[pos]].value);
+      else if (key.name === "q" || (key.ctrl && key.name === "c")) return done(-1);
+      else return;
+      render(false);
+    };
+    stdin.on("keypress", onKey);
+  });
+}
+
 function readState() { try { return JSON.parse(fs.readFileSync(STATE_FILE, "utf8")); } catch { return null; } }
+
+// Content hash of the proxy source on disk — matched against the running proxy's recorded
+// srcHash so we can auto-restart it whenever claude-proxy.js changes (no more stale proxy).
+function proxyFileHash() {
+  try { return crypto.createHash("sha256").update(fs.readFileSync(PROXY_FILE)).digest("hex").slice(0, 16); }
+  catch { return ""; }
+}
 
 // Confirm a *claude-free* proxy is alive on this port (not some unrelated service that grabbed it).
 // Our proxy answers GET / with a 404 body containing "use POST /v1/messages".
@@ -107,7 +202,15 @@ async function runningProxyPort() {
 // Ensure a proxy is running and return the port to talk to.
 async function ensureProxy() {
   const existing = await runningProxyPort();
-  if (existing) return existing;
+  if (existing) {
+    // Reuse only if the running proxy matches the current source. If claude-proxy.js changed
+    // (e.g. after an edit/update), the recorded srcHash won't match — restart so the fix takes effect.
+    const st = readState();
+    if (st && st.srcHash && st.srcHash === proxyFileHash()) return existing;
+    console.log("> proxy source changed — restarting proxy");
+    if (st && st.pid) { try { process.kill(st.pid); } catch {} }
+    for (let i = 0; i < 30 && (await runningProxyPort()); i++) await new Promise((r) => setTimeout(r, 100));
+  }
   try { fs.unlinkSync(STATE_FILE); } catch {}   // drop stale state before starting fresh
   const out = fs.openSync(path.join(DIR, "claude-proxy.log"), "a");
   const env = { ...process.env };
@@ -157,8 +260,10 @@ Environment:
 
 function printModels() {
   console.log(`claude-free v${VERSION}  -  available models:\n`);
-  for (const [label, id, key] of MODELS) {
-    console.log(`  ${id.padEnd(24)} ${key ? "(needs " + key + " key)" : "(no key)"}\n    ${label.replace(/\s{2,}/g, " ")}`);
+  for (const m of MODELS) {
+    if (HIDE_TIERS.has(m.tier)) continue;
+    const tag = m.key ? "(subscription)" : "(no key)";
+    console.log(`  ${m.id.padEnd(40)} ${tag}\n    ${m.name} — ${m.note}${m.ctx ? " · " + m.ctx + " ctx" : ""}${m.tps ? " · ~" + m.tps + " tok/s" : ""}`);
   }
 }
 
@@ -191,7 +296,7 @@ async function selfUpdate() {
       process.exit(1);
     }
   }
-  console.log("\nUpdated. If the proxy is already running, restart it:  (stop it, then run claude-free)");
+  console.log("\nUpdated. The next launch auto-restarts the proxy if it changed — just run claude-free.");
 }
 
 // Orange->gold ASCII wordmark, one palette color per line.
@@ -232,11 +337,12 @@ async function main() {
   console.log("   \x1b[2mv" + VERSION + "\x1b[0m  \x1b[2m·\x1b[0m  " + status +
     "  \x1b[2m·  " + MODELS.length + " models  ·  small: deepseek-v4-flash\x1b[0m\n");
 
-  const mi = await menu("Pick a free AI model", MODELS.map((m) => m[0]));
+  const mi = await menuRich("Pick a model", modelMenuEntries());
   if (mi < 0) { console.log("cancelled"); process.exit(0); }
-  const [, modelId, keyService] = MODELS[mi];
+  const sel = MODELS[mi];
+  const modelId = sel.id, keyService = sel.key;
 
-  const ri = await menu(`Reasoning mode for ${modelId}?`, ["Without thinking  - fast, direct (recommended)", "With thinking     - deeper, slower"]);
+  const ri = await menu(`Reasoning mode for ${sel.name}?`, ["Without thinking  - fast, direct (recommended)", "With thinking     - deeper, slower"]);
   if (ri < 0) { console.log("cancelled"); process.exit(0); }
 
   const pi = await menu("Permission mode?", ["Normal             - ask before edits/commands (safe)", "Bypass permissions - run everything, no prompts (risky)"]);
@@ -244,12 +350,25 @@ async function main() {
 
   const model = modelId + (ri === 1 ? ":think" : "");
   let authToken = "local-zen";
-  if (keyService) {
+  if (keyService === "sub") {
+    // Subscription models authenticate with your logged-in ZenMux web-session cookie, which the proxy
+    // reads from keys.json (zenmux_cookie) or $ZENMUX_COOKIE. The launch auth token stays a placeholder.
+    let cookie = process.env.ZENMUX_COOKIE || loadKeys().zenmux_cookie || "";
+    if (!cookie) {
+      console.log("\nThis model uses your ZenMux subscription via your browser session.");
+      console.log("In a logged-in zenmux.ai tab: DevTools > Network > any chat request > copy the full 'cookie:' header.");
+      cookie = await ask("Paste your ZenMux cookie: ");
+      if (!cookie) { console.log("no cookie entered, aborting"); process.exit(1); }
+      const k = loadKeys(); k.zenmux_cookie = cookie; saveKeys(k);
+      console.log("saved to " + KEYS_FILE);
+    }
+  } else if (keyService) {
     authToken = getKey(keyService);
     if (!authToken) {
       console.log(`\nThis model needs a free ${keyService} API key.`);
       if (keyService === "gemini") console.log("Get one at: https://aistudio.google.com/apikey");
       if (keyService === "openrouter") console.log("Get one at: https://openrouter.ai/keys");
+      if (keyService === "zenmux") console.log("Get one at: https://zenmux.ai/settings/keys");
       authToken = await ask(`Paste your ${keyService} key: `);
       if (!authToken) { console.log("no key entered, aborting"); process.exit(1); }
       const k = loadKeys(); k[keyService] = authToken; saveKeys(k);
@@ -262,7 +381,9 @@ async function main() {
 
   const args = [...passthru];
   if (pi === 1) args.push("--dangerously-skip-permissions");
-  console.log(`\n> launching claude on ${model}${pi === 1 ? "  [bypass]" : ""}\n`);
+  // Selections done — wipe the picker (and scrollback) so Claude Code starts on a clean screen.
+  process.stdout.write("\x1b[2J\x1b[3J\x1b[H");
+  console.log(`> launching ${sel.name}${ri === 1 ? " · thinking" : ""}${pi === 1 ? " · bypass" : ""}\n`);
 
   const env = { ...process.env,
     ANTHROPIC_BASE_URL: "http://127.0.0.1:" + port,
@@ -288,4 +409,5 @@ async function main() {
   });
   child.on("exit", (code) => process.exit(code || 0));
 }
-main();
+if (require.main === module) main();
+else module.exports = { MODELS, TIER_LABEL, fmtRow, modelMenuEntries, ensureProxy, proxyFileHash, runningProxyPort };
