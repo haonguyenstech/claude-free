@@ -1,0 +1,27 @@
+# Self-host the claude-free proxy. Copy .env.example -> .env, fill in the values, then:
+#   docker compose up -d --build
+# Serves on http://localhost:4002 (host) -> :3000 (container). Put TLS in front before exposing it.
+services:
+  claude-free:
+    build: .
+    image: claude-free:latest
+    ports:
+      - "${PORT:-4002}:3000"
+    environment:
+      # Bind inside the container; the published port above is what clients reach.
+      CLAUDE_FREE_HOST: "0.0.0.0"
+      # Dashboard admin password. If unset, one is generated on first run and printed to the logs.
+      CLAUDE_FREE_ADMIN_PASSWORD: "${CLAUDE_FREE_ADMIN_PASSWORD:-}"
+      # Comma-separated client access tokens (or manage them from the dashboard).
+      CLAUDE_FREE_TOKENS: "${CLAUDE_FREE_TOKENS:-}"
+      # Backend keys (optional — can also be set from the dashboard, stored in the DB volume).
+      TOKENROUTER_KEY: "${TOKENROUTER_KEY:-}"
+      OPENROUTER_KEY: "${OPENROUTER_KEY:-}"
+      GEMINI_KEY: "${GEMINI_KEY:-}"
+    volumes:
+      # Persist the SQLite DB + state across redeploys.
+      - claude-free-data:/data
+    restart: unless-stopped
+
+volumes:
+  claude-free-data:

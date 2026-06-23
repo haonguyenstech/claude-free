@@ -1,0 +1,27 @@
+# Build context excludes — keep the image small and never ship local state/secrets.
+node_modules
+.next
+out
+.git
+.gitignore
+
+# secrets / local state (never bake into an image)
+.env
+.env.*
+keys.json
+*.db
+*.db-shm
+*.db-wal
+*.log
+
+# local tooling artifacts
+.playwright-mcp
+.serena
+.DS_Store
+npm-debug.log*
+
+# legacy client/installers — not part of the server image
+claude-free.js
+install.sh
+install.bat
+install.ps1
