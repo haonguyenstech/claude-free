@@ -12,7 +12,7 @@ const http = require("http");
 const https = require("https");
 const readline = require("readline");
 
-const VERSION = "2.2.0";
+const VERSION = "2.3.0";
 const DIR = __dirname;
 const KEYS_FILE = path.join(DIR, "keys.json");
 // Background/small-fast model for Claude Code's housekeeping calls (titles, summaries). Must be one
@@ -99,7 +99,19 @@ function modelMenuEntries() {
 function loadKeys() { try { return JSON.parse(fs.readFileSync(KEYS_FILE, "utf8")); } catch { return {}; } }
 function saveKeys(k) { try { fs.writeFileSync(KEYS_FILE, JSON.stringify(k, null, 2)); } catch {} }
 function ask(q) {
-  return new Promise((r) => { const rl = readline.createInterface({ input: process.stdin, output: process.stdout }); rl.question(q, (a) => { rl.close(); r(a.trim()); }); });
+  return new Promise((r) => {
+    const stdin = process.stdin;
+    // The arrow-key menus attach a keypress decoder to stdin (readline.emitKeypressEvents). If it's
+    // still attached when we open this line-input prompt, every typed character is decoded twice —
+    // it comes out doubled/garbled, so the URL or key you type never lands and the change "fails".
+    // Tear those listeners down and return stdin to cooked mode so we read one clean line.
+    stdin.removeAllListeners("keypress");
+    stdin.removeAllListeners("data");
+    if (stdin.isTTY) { try { stdin.setRawMode(false); } catch {} }
+    stdin.resume();
+    const rl = readline.createInterface({ input: stdin, output: process.stdout, terminal: true });
+    rl.question(q, (a) => { rl.close(); r(a.trim()); });
+  });
 }
 
 // Resolve the current/default server URL: env > keys.json > baked default. Trailing slashes trimmed.
@@ -313,6 +325,7 @@ Options:
   -u, --update     update claude-free to the latest version from GitHub
       --models     list the available models and exit
       --set-key    set/replace your API secret key (paste it), then exit
+      --set-server <url>  point the client at a proxy URL and save it, then exit
 
 Run with no options to pick a model interactively, then launch Claude Code against the
 hosted proxy. Anything after "--" is passed straight through to 'claude', e.g.
@@ -431,9 +444,18 @@ async function main() {
   if (has("--models")) { printModels(); process.exit(0); }
   if (has("-u", "--update")) { await selfUpdate(); process.exit(0); }
   if (has("--set-key", "--set-api-key")) { await setApiKey(); process.exit(0); }
+  // Non-interactive way to point the client at a different proxy (no picker/typing needed).
+  if (has("--set-server")) {
+    const i = ours.indexOf("--set-server");
+    const url = normalizeUrl(ours[i + 1] || "");
+    if (!url) { console.log("usage: claude-free --set-server <url>"); process.exit(1); }
+    rememberServer(url);
+    console.log("server set to " + url + " (saved to " + KEYS_FILE + ")");
+    process.exit(0);
+  }
 
   // Unknown pre-"--" args are still forwarded to claude (back-compat).
-  const KNOWN = new Set(["-h", "--help", "-v", "--version", "-u", "--update", "--models", "--set-key", "--set-api-key"]);
+  const KNOWN = new Set(["-h", "--help", "-v", "--version", "-u", "--update", "--models", "--set-key", "--set-api-key", "--set-server"]);
   const passthru = [...ours.filter((a) => !KNOWN.has(a)), ...claudeArgs];
 
   printLogo();
