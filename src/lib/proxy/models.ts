@@ -24,7 +24,9 @@ export const DEFAULT_MAX_TOKENS = Number(process.env.CLAUDE_FREE_MAX_TOKENS) || 
 
 // Public alias -> exact model id for TokenRouter (case-sensitive upstream names).
 export const TOKENROUTER_MODELS: Record<string, string> = {
-  "gpt-5.6-mercury": "gpt-5.6-mercury",
+  // Client id stays `tokenrouter/gpt-5.6-mercury`; TokenRouter's actual model name includes the
+  // `tokenrouter/` prefix (verified: the bare name 404s, the prefixed name reaches the channel).
+  "gpt-5.6-mercury": "tokenrouter/gpt-5.6-mercury",
 };
 
 // Gemini models served via the Gemini key (Google AI Studio). The id passes through verbatim.
