@@ -12,7 +12,7 @@ const http = require("http");
 const https = require("https");
 const readline = require("readline");
 
-const VERSION = "2.1.0";
+const VERSION = "2.2.0";
 const DIR = __dirname;
 const KEYS_FILE = path.join(DIR, "keys.json");
 // Background/small-fast model for Claude Code's housekeeping calls (titles, summaries). Must be one
@@ -29,8 +29,13 @@ const DEFAULT_SERVER = "http://127.0.0.1:3000";
 // rough), ctx is the context window, star marks the recommended pick in each tier. Ordered by tps.
 // { name, id, tier, ctx, tps, note, star }
 const MODELS = [
-  // --- FREE · no key needed ---
-  { name: "MiMo Auto",         id: "mimo-auto",             tier: "free", ctx: "1M", tps: 65,  note: "free, no key", star: true },
+  // --- FREE · no key needed --- (Zen via opencode.ai + Xiaomi MiMo; ordered by tok/s)
+  { name: "North Mini Code",   id: "north-mini-code-free",  tier: "free", ctx: "",   tps: 123, note: "fast coding model",        star: true },
+  { name: "MiMo Auto",         id: "mimo-auto",             tier: "free", ctx: "1M", tps: 71,  note: "free, no key" },
+  { name: "DeepSeek V4 Flash", id: "deepseek-v4-flash-free",tier: "free", ctx: "",   tps: 63,  note: "fast, clean · small model" },
+  { name: "Big Pickle",        id: "big-pickle",            tier: "free", ctx: "",   tps: 53,  note: "stealth, fast & clean" },
+  { name: "MiMo V2.5",         id: "mimo-v2.5-free",        tier: "free", ctx: "",   tps: 42,  note: "reasoning (shows thinking)" },
+  { name: "Nemotron 3 Ultra",  id: "nemotron-3-ultra-free", tier: "free", ctx: "",   tps: 17,  note: "550B, deepest · slow" },
   // --- BYO-key models (key lives on the server) ---
   { name: "MiniMax M3",        id: "tokenrouter/minimax-m3", tier: "paid", ctx: "512K", tps: 28, note: "TokenRouter" },
   // --- Gemini (Google AI Studio · server-side gemini key) ---
