@@ -12,7 +12,7 @@ const http = require("http");
 const https = require("https");
 const readline = require("readline");
 
-const VERSION = "2.3.0";
+const VERSION = "2.3.1";
 const DIR = __dirname;
 const KEYS_FILE = path.join(DIR, "keys.json");
 // Background/small-fast model for Claude Code's housekeeping calls (titles, summaries). Must be one
@@ -98,19 +98,39 @@ function modelMenuEntries() {
 
 function loadKeys() { try { return JSON.parse(fs.readFileSync(KEYS_FILE, "utf8")); } catch { return {}; } }
 function saveKeys(k) { try { fs.writeFileSync(KEYS_FILE, JSON.stringify(k, null, 2)); } catch {} }
+// Read a line of input (URL, API key, …). We deliberately reuse the SAME raw-mode keypress mechanism
+// the arrow-key menus use, instead of readline.createInterface — interleaving a readline line-reader
+// with the menus' emitKeypressEvents decoder on the same stdin garbled/swallowed typed input (the
+// "can't type the server URL" bug). Handles typing, paste (chunks arrive as printable str), backspace,
+// Enter, and Ctrl-C, echoing as you go.
 function ask(q) {
-  return new Promise((r) => {
+  return new Promise((resolve) => {
     const stdin = process.stdin;
-    // The arrow-key menus attach a keypress decoder to stdin (readline.emitKeypressEvents). If it's
-    // still attached when we open this line-input prompt, every typed character is decoded twice —
-    // it comes out doubled/garbled, so the URL or key you type never lands and the change "fails".
-    // Tear those listeners down and return stdin to cooked mode so we read one clean line.
-    stdin.removeAllListeners("keypress");
-    stdin.removeAllListeners("data");
-    if (stdin.isTTY) { try { stdin.setRawMode(false); } catch {} }
+    process.stdout.write(q);
+    readline.emitKeypressEvents(stdin);
+    if (stdin.isTTY) { try { stdin.setRawMode(true); } catch {} }
     stdin.resume();
-    const rl = readline.createInterface({ input: stdin, output: process.stdout, terminal: true });
-    rl.question(q, (a) => { rl.close(); r(a.trim()); });
+    let buf = "";
+    const onKey = (str, key) => {
+      const name = key && key.name;
+      if (name === "return" || name === "enter") {
+        stdin.removeListener("keypress", onKey);
+        if (stdin.isTTY) { try { stdin.setRawMode(false); } catch {} }
+        process.stdout.write("\n");
+        resolve(buf.trim());
+      } else if (name === "backspace") {
+        if (buf.length) { buf = buf.slice(0, -1); process.stdout.write("\b \b"); }
+      } else if (key && key.ctrl && name === "c") {
+        if (stdin.isTTY) { try { stdin.setRawMode(false); } catch {} }
+        process.stdout.write("\n");
+        process.exit(0);
+      } else if (str && str.charCodeAt(0) >= 0x20) {
+        // Printable input — single char or a pasted chunk; ignores escape/control sequences.
+        buf += str;
+        process.stdout.write(str);
+      }
+    };
+    stdin.on("keypress", onKey);
   });
 }
 
