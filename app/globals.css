@@ -1,0 +1,135 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ---- claude-free / Zippay design tokens ---- */
+:root {
+  --radius: 0.9rem;
+
+  --background: #f4f4f3;
+  --foreground: #0a0a0a;
+  --card: #ffffff;
+  --card-foreground: #0a0a0a;
+  --popover: #ffffff;
+  --popover-foreground: #0a0a0a;
+
+  --primary: #18e08c;
+  --primary-foreground: #063322;
+  --secondary: #eaf1ee;
+  --secondary-foreground: #0a3d2e;
+  --muted: #f4f4f3;
+  --muted-foreground: #6b7280;
+  --accent: #e6fbf1;
+  --accent-foreground: #063322;
+  --destructive: #e5564b;
+  --destructive-foreground: #ffffff;
+
+  --border: #ececec;
+  --border-soft: #f3f3f2;
+  --input: #ececec;
+  --ring: #18e08c;
+
+  --forest: #0a3d2e;
+  --forest-2: #0c4a38;
+  --forest-line: #19553f;
+  --mint: #18e08c;
+  --mint-strong: #0fbf74;
+  --mint-ink: #063322;
+  --mint-soft: #e6fbf1;
+  --positive: #0ba968;
+  --amber: #d78a14;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-border-soft: var(--border-soft);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-forest: var(--forest);
+  --color-forest-2: var(--forest-2);
+  --color-forest-line: var(--forest-line);
+  --color-mint: var(--mint);
+  --color-mint-strong: var(--mint-strong);
+  --color-mint-ink: var(--mint-ink);
+  --color-mint-soft: var(--mint-soft);
+  --color-positive: var(--positive);
+  --color-amber: var(--amber);
+
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 3px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 6px);
+
+  --font-sans: "Satoshi", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    letter-spacing: -0.01em;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: var(--mint);
+    color: var(--mint-ink);
+  }
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes cf-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes cf-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.cf-overlay-in {
+  animation: cf-overlay-in 0.15s ease-out;
+}
+
+.cf-dialog-in {
+  animation: cf-dialog-in 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+}

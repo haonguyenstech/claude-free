@@ -24,9 +24,7 @@ rem 3) folders
 if not exist "%DIR%" mkdir "%DIR%"
 if not exist "%BIN%" mkdir "%BIN%"
 
-rem 4) program files
-echo   downloading claude-proxy.js
-curl -fsSL "%BASE%/claude-proxy.js" -o "%DIR%\claude-proxy.js" || (echo download failed & exit /b 1)
+rem 4) client file (the proxy is hosted separately; the client only needs claude-free.js)
 echo   downloading claude-free.js
 curl -fsSL "%BASE%/claude-free.js" -o "%DIR%\claude-free.js" || (echo download failed & exit /b 1)
 

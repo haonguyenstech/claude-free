@@ -1,8 +1,12 @@
 # claude-free
 
-Run **Claude Code** on free AI models (DeepSeek, MiMo, Nemotron, Gemini, …) through a tiny
-local proxy. Cross-platform: **Windows, macOS, Linux**. A Node.js picker lets you choose a
-model, reasoning mode, and permission mode, then launches Claude Code pointed at the proxy.
+Run **Claude Code** on free AI models (MiMo, Claude, Gemini, OpenRouter, …) through a **hosted
+proxy**. Cross-platform: **Windows, macOS, Linux**. A Node.js picker lets you choose a model,
+reasoning mode, and permission mode, then launches Claude Code pointed at the proxy server.
+
+The proxy runs on a server you (or your team's operator) deploys once — it holds all the backend
+keys/cookies centrally. Each user installs the `claude-free` client, gets an **access token**, and
+just uses it. No keys on the client; nothing to configure beyond the token.
 
 ## Install
 
@@ -35,45 +39,77 @@ claude-free
 ```
 
 ## How it works
-- `claude-proxy.js` — a localhost server (on an auto-picked free port; `claude-free --stop` stops it) that translates Anthropic Messages API ⇄ OpenAI
-  chat completions and routes each model to the right free backend:
-  - Zen free models → `opencode.ai` (empty bearer, **no key, no account**)
+- **The server** — a **Next.js app** (in `app/` + `src/`, run via Docker) that gates every request
+  behind an access token, then translates the Anthropic Messages API ⇄ OpenAI chat completions and
+  routes each model to the right backend using **server-side** keys, plus an admin dashboard at
+  `/dashboard` for keys, tokens, models, and traffic:
   - `mimo-auto` → Xiaomi free endpoint (self-bootstraps a device fingerprint → JWT, **no key**)
-  - `pro/<model>` → ZenMux, authenticated with your **own logged-in browser cookie**. ZenMux speaks
-    the Anthropic API natively, so these pass through untouched — full streaming, tools, 1M context.
-  - `gemini-*` → Google AI Studio (free key) · `vendor/model:free` → OpenRouter (free key)
-- `claude-free.js` — the picker. Auto-starts the proxy, handles auth, launches `claude`.
+  - `claude-*` → real Claude models via the host's Claude Code subscription (or an Anthropic key)
+  - `gemini-*` → Google AI Studio (server key) · `vendor/model:free` → OpenRouter (server key)
+  - `tokenrouter/<model>` → TokenRouter (server key)
+- `claude-free.js` — the **client/picker**. Points Claude Code at the hosted proxy
+  (`CLAUDE_FREE_SERVER`) with your access token, and launches `claude`. It runs no proxy and
+  stores no backend keys — only your token (in `~/.claude-free/keys.json`).
 
 ## Tiers
-- **FREE** — works instantly. No account, no key, no cookie. Just run `claude-free` and pick one.
-- **FREE PRO** — ZenMux models billed **$0** (pay-as-you-go, no quota), but they need a ZenMux
-  session cookie because they run against your logged-in ZenMux account.
-- **PRO** — ZenMux subscription models (hidden by default). Same cookie, uses your plan's quota.
+- **FREE** — works instantly. No account, no key. Just run `claude-free` and pick MiMo Auto.
+- **ANTHROPIC** — real Claude models (Sonnet 4.6, Opus 4.8, Haiku 4.5) via the host's Claude Code
+  subscription login on the server. No extra key on the client.
+- **GEMINI** — Google AI Studio (Gemini 2.5 Flash-Lite). Uses the server-side Gemini key.
+- **OPENROUTER** — curated free, tool-capable models. Needs a (free) server-side OpenRouter key.
+  Free models get rate-limited (429) unpredictably, so the proxy sends an OpenRouter **fallback list**
+  (your pick + 2 siblings) — if your model is throttled you transparently get an available one.
+- **TOKENROUTER** — extra providers (e.g. MiniMax M3). Key lives on the server.
 
-## Authentication is per-machine — you never use anyone else's
-There is **no shared credential in this repo**, by design:
+## Authentication
+All backend credentials live **on the server**, never on the client. The client authenticates to
+the server with a single **access token**:
 
-- **FREE tier** needs nothing — anyone who installs it can use those models immediately.
-- **FREE PRO / PRO** need a **ZenMux session cookie that is yours**. The first time you pick a
-  cookie-backed model, the picker prompts *"Paste your ZenMux cookie"* and saves it to **your own**
-  `~/.claude-free/keys.json` (gitignored, never published). Each PC/user supplies their own — a
-  cookie is tied to one ZenMux session and bills that account, not anyone else's.
+- The operator generates tokens and lists them in `CLAUDE_FREE_TOKENS` on the server.
+- Each user pastes their token once (or sets `CLAUDE_FREE_TOKEN`); it's saved to **their own**
+  `~/.claude-free/keys.json` (gitignored). The server rejects any request without a valid token —
+  no token configured on the server = every request is refused (fail closed).
 
-Get your cookie: log in at <https://zenmux.ai> → DevTools → Network → copy the `cookie:` request
-header (the `sessionId` + `sessionId.sig` pair) from any request to `zenmux.ai`. You can also supply
-it via the `ZENMUX_COOKIE` environment variable instead of pasting.
+This keeps the shared backend accounts/keys from being abused: only token holders can use them.
 
-Google/OpenRouter key-models read their key from an env var (`GEMINI_API_KEY`, `OPENROUTER_API_KEY`)
-or `~/.claude-free/keys.json` — the picker offers to save it the first time.
+## Self-hosting the server (Docker)
+The proxy is pure Node stdlib — no dependencies. Deploy once:
+
+```bash
+cp .env.example .env          # then edit: set CLAUDE_FREE_TOKENS + the backend keys you use
+docker compose up -d --build  # serves HTTP on :4002
+```
+
+Generate access tokens with:
+```bash
+node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"
+```
+
+Server environment variables (see `.env.example`):
+
+| Var | Purpose |
+|---|---|
+| `CLAUDE_FREE_TOKENS` | **Required.** Comma-separated access tokens clients must present. |
+| `TOKENROUTER_KEY` / `OPENROUTER_KEY` / `GEMINI_KEY` | API keys for those backends. |
+| `PORT` / `CLAUDE_FREE_HOST` | Listen port (default 4002) / bind address (default `127.0.0.1`, loopback-only). Set `CLAUDE_FREE_HOST=0.0.0.0` to expose on the network — only do this behind TLS + a non-default `CLAUDE_FREE_ADMIN_PASSWORD`, since the dashboard holds your backend keys and Claude subscription token. |
+| `CLAUDE_FREE_ADMIN_PASSWORD` | Dashboard admin password. If unset, a strong one is generated on first run and printed to the server logs once. |
+
+The container serves plain HTTP. Put it behind a **TLS-terminating reverse proxy** (Caddy, nginx,
+Cloudflare, or your platform's load balancer) so clients reach it over `https://your-domain`, then
+either bake that URL into `DEFAULT_SERVER` in `claude-free.js` or have users set `CLAUDE_FREE_SERVER`.
+
+Backend keys are still tied to real accounts — e.g. a Gemini key from
+<https://aistudio.google.com/apikey>, an OpenRouter key from <https://openrouter.ai/keys>, etc.
+Manage them from the dashboard at `/dashboard`.
 
 ## Models
 | Tier | Models | Backend | Auth |
 |---|---|---|---|
-| FREE | Big Pickle · DeepSeek V4 Flash · North Mini Code ⭐ · MiMo V2.5 | Zen | none |
-| FREE | MiMo Auto (1M ctx) | Xiaomi | none |
-| FREE | Nemotron 3 Ultra | Zen | none |
-| FREE PRO | Kimi K2.7 Code ⭐ · GLM 4.7 Flash · GLM 5.2 (1M) · Step 3.7 Flash | ZenMux | cookie ($0) |
-| PRO | Kimi K2.7 · DeepSeek V4 · Gemini 3.1 Pro · MiniMax M3 · Qwen3.7 · GLM 4.7 | ZenMux | cookie (plan) |
+| FREE | MiMo Auto ⭐ (1M ctx) | Xiaomi | none |
+| ANTHROPIC | Claude Sonnet 4.6 ⭐ · Claude Opus 4.8 · Claude Haiku 4.5 | Claude Code subscription | none (host login) |
+| GEMINI | Gemini 2.5 Flash-Lite ⭐ | Google AI Studio | Gemini key |
+| OPENROUTER | gpt-oss 120B ⭐ · Nemotron 3 Super (1M) · Gemma 4 31B (262K) · gpt-oss 20B · Nemotron Nano 12B | OpenRouter | OpenRouter key |
+| TOKENROUTER | MiniMax M3 (512K) | TokenRouter | API key |
 
 > ⭐ = default pick in its tier. Run `claude-free --models` for the full list with measured tok/s.
 

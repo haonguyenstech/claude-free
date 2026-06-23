@@ -2,7 +2,7 @@
 # Run from cmd:  powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/haonguyenstech/claude-free/main/install.ps1 | iex"
 $ErrorActionPreference = "Stop"
 
-# Where the raw claude-proxy.js / claude-free.js live. Replace with your host (GitHub raw, domain, etc.).
+# Where the raw claude-free.js client lives. Replace with your host (GitHub raw, domain, etc.).
 $Base = $env:CLAUDE_FREE_BASE; if (-not $Base) { $Base = "https://raw.githubusercontent.com/haonguyenstech/claude-free/main" }
 
 $Dir = Join-Path $env:USERPROFILE ".claude-free"
@@ -17,8 +17,8 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
   Write-Host "Node installed. You may need to open a new terminal for it to be on PATH." -ForegroundColor Yellow
 }
 
-# 2) program files
-foreach ($f in @("claude-proxy.js", "claude-free.js")) {
+# 2) client file (the proxy is hosted separately; the client only needs claude-free.js)
+foreach ($f in @("claude-free.js")) {
   Write-Host "  downloading $f"
   Invoke-WebRequest -UseBasicParsing "$Base/$f" -OutFile (Join-Path $Dir $f)
 }

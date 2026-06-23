@@ -15,9 +15,10 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
-# 2) program files (use local copies if present next to this script, else download)
+# 2) client file (use local copy if present next to this script, else download). The proxy is hosted
+# (the operator deploys the Next.js server separately) — the client only needs claude-free.js.
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
-for f in claude-proxy.js claude-free.js; do
+for f in claude-free.js; do
   if [ -n "$SELF_DIR" ] && [ -f "$SELF_DIR/$f" ]; then cp "$SELF_DIR/$f" "$DIR/$f"
   else echo "  downloading $f"; curl -fsSL "$BASE/$f" -o "$DIR/$f"; fi
 done

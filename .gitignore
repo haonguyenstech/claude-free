@@ -1,8 +1,24 @@
 # runtime / local state — never publish
 keys.json
+.env
 *.log
 mimo-free-client
 node_modules/
 .DS_Store
 proxy.json
 proxy.port
+
+# Next.js
+.next/
+/out/
+next-env.d.ts
+*.tsbuildinfo
+
+# SQLite
+*.db
+*.db-shm
+*.db-wal
+
+# local tooling artifacts (not part of the project)
+.playwright-mcp/
+.serena/
