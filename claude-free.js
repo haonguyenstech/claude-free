@@ -12,7 +12,7 @@ const http = require("http");
 const https = require("https");
 const readline = require("readline");
 
-const VERSION = "2.3.1";
+const VERSION = "2.4.0";
 const DIR = __dirname;
 const KEYS_FILE = path.join(DIR, "keys.json");
 // Background/small-fast model for Claude Code's housekeeping calls (titles, summaries). Must be one
@@ -37,7 +37,7 @@ const MODELS = [
   { name: "MiMo V2.5",         id: "mimo-v2.5-free",        tier: "free", ctx: "",   tps: 42,  note: "reasoning (shows thinking)" },
   { name: "Nemotron 3 Ultra",  id: "nemotron-3-ultra-free", tier: "free", ctx: "",   tps: 17,  note: "550B, deepest · slow" },
   // --- BYO-key models (key lives on the server) ---
-  { name: "MiniMax M3",        id: "tokenrouter/minimax-m3", tier: "paid", ctx: "512K", tps: 28, note: "TokenRouter" },
+  { name: "GPT-5.6 Mercury",   id: "tokenrouter/gpt-5.6-mercury", tier: "paid", ctx: "",   tps: 0,  note: "TokenRouter" },
   // --- Gemini (Google AI Studio · server-side gemini key) ---
   { name: "Gemini 2.5 Flash-Lite", id: "gemini-2.5-flash-lite", tier: "gemini", ctx: "1M", tps: 107, note: "Google · fastest",       star: true },
 
