@@ -24,7 +24,7 @@ export const DEFAULT_MAX_TOKENS = Number(process.env.CLAUDE_FREE_MAX_TOKENS) || 
 
 // Public alias -> exact model id for TokenRouter (case-sensitive upstream names).
 export const TOKENROUTER_MODELS: Record<string, string> = {
-  "minimax-m3": "MiniMax-M3",
+  "gpt-5.6-mercury": "gpt-5.6-mercury",
 };
 
 // Gemini models served via the Gemini key (Google AI Studio). The id passes through verbatim.
@@ -79,7 +79,7 @@ export const MODEL_META: Record<string, { name: string; ctx: string; tps: number
   "north-mini-code-free": { name: "North Mini Code", ctx: "", tps: 123 },
   "mimo-v2.5-free": { name: "MiMo V2.5", ctx: "", tps: 42 },
   "nemotron-3-ultra-free": { name: "Nemotron 3 Ultra", ctx: "", tps: 17 },
-  "minimax-m3": { name: "MiniMax M3", ctx: "512K", tps: 58 },
+  "gpt-5.6-mercury": { name: "GPT-5.6 Mercury", ctx: "", tps: 0 },
   "gemini-2.5-flash-lite": { name: "Gemini 2.5 Flash-Lite", ctx: "1M", tps: 91 },
   "claude-opus-4-8": { name: "Claude Opus 4.8", ctx: "200K", tps: 35 },
   "claude-sonnet-4-6": { name: "Claude Sonnet 4.6", ctx: "200K", tps: 32 },

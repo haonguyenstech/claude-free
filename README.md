@@ -59,7 +59,7 @@ claude-free
 - **OPENROUTER** — curated free, tool-capable models. Needs a (free) server-side OpenRouter key.
   Free models get rate-limited (429) unpredictably, so the proxy sends an OpenRouter **fallback list**
   (your pick + 2 siblings) — if your model is throttled you transparently get an available one.
-- **TOKENROUTER** — extra providers (e.g. MiniMax M3). Key lives on the server.
+- **TOKENROUTER** — extra providers (e.g. GPT-5.6 Mercury). Key lives on the server.
 
 ## Authentication
 All backend credentials live **on the server**, never on the client. The client authenticates to
@@ -109,7 +109,7 @@ Manage them from the dashboard at `/dashboard`.
 | ANTHROPIC | Claude Sonnet 4.6 ⭐ · Claude Opus 4.8 · Claude Haiku 4.5 | Claude Code subscription | none (host login) |
 | GEMINI | Gemini 2.5 Flash-Lite ⭐ | Google AI Studio | Gemini key |
 | OPENROUTER | gpt-oss 120B ⭐ · Nemotron 3 Super (1M) · Gemma 4 31B (262K) · gpt-oss 20B · Nemotron Nano 12B | OpenRouter | OpenRouter key |
-| TOKENROUTER | MiniMax M3 (512K) | TokenRouter | API key |
+| TOKENROUTER | GPT-5.6 Mercury | TokenRouter | API key |
 
 > ⭐ = default pick in its tier. Run `claude-free --models` for the full list with measured tok/s.
 
