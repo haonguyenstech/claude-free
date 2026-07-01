@@ -12,7 +12,7 @@ const http = require("http");
 const https = require("https");
 const readline = require("readline");
 
-const VERSION = "2.4.0";
+const VERSION = "2.6.0";
 const DIR = __dirname;
 const KEYS_FILE = path.join(DIR, "keys.json");
 // Background/small-fast model for Claude Code's housekeeping calls (titles, summaries). Must be one
@@ -38,6 +38,8 @@ const MODELS = [
   { name: "Nemotron 3 Ultra",  id: "nemotron-3-ultra-free", tier: "free", ctx: "",   tps: 17,  note: "550B, deepest · slow" },
   // --- BYO-key models (key lives on the server) ---
   { name: "GPT-5.6 Mercury",   id: "tokenrouter/gpt-5.6-mercury", tier: "paid", ctx: "",   tps: 0,  note: "TokenRouter" },
+  // --- Sakana AI (chat.sakana.ai · server-side cookie · emulated tool-calling) ---
+  { name: "Namazu",            id: "sakana/namazu",         tier: "sakana", ctx: "",   tps: 0,  note: "Sakana AI · tools (beta)", star: true },
   // --- Gemini (Google AI Studio · server-side gemini key) ---
   { name: "Gemini 2.5 Flash-Lite", id: "gemini-2.5-flash-lite", tier: "gemini", ctx: "1M", tps: 107, note: "Google · fastest",       star: true },
 
@@ -56,6 +58,7 @@ const TIER_LABEL = {
   free:  "  \x1b[1;38;5;208mFREE\x1b[0m \x1b[2m· no key needed\x1b[0m",
   paid:  "  \x1b[1;38;5;39mTOKENROUTER\x1b[0m \x1b[2m· server API key\x1b[0m",
   gemini:"  \x1b[1;38;5;39mGEMINI\x1b[0m \x1b[2m· Google AI Studio key\x1b[0m",
+  sakana:"  \x1b[1;38;5;39mSAKANA\x1b[0m \x1b[2m· server cookie · emulated tools (beta)\x1b[0m",
   openrouter:"  \x1b[1;38;5;39mOPENROUTER\x1b[0m \x1b[2m· free models · needs server OpenRouter key\x1b[0m",
   cli:  "  \x1b[1;38;5;39mANTHROPIC\x1b[0m \x1b[2m· Claude models\x1b[0m",
 };
@@ -367,6 +370,7 @@ function printModels() {
       : m.tier === "gemini" ? "(gemini key)"
       : m.tier === "openrouter" ? "(openrouter key)"
       : m.tier === "cli" ? "(anthropic)"
+      : m.tier === "sakana" ? "(server cookie)"
       : "(subscription)";
     console.log(`  ${m.id.padEnd(40)} ${tag}\n    ${m.name} — ${m.note}${m.ctx ? " · " + m.ctx + " ctx" : ""}${m.tps ? " · ~" + m.tps + " tok/s" : ""}`);
   }

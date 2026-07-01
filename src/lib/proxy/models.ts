@@ -52,6 +52,14 @@ export const OPENROUTER_FREE_MODELS = [
   "nvidia/nemotron-nano-12b-v2-vl:free",
 ];
 
+// ---- Sakana AI "Namazu" backend (chat.sakana.ai — a HuggingFace chat-ui instance) ----
+// No API key: auth is the browser's sakana-chat + cf_clearance cookies (serverKey("sakana")).
+// Client model id is `sakana/namazu`; it routes to backend "sakana" (see translate.ts:parseModel).
+export const SAKANA_HOST = "chat.sakana.ai";
+export const SAKANA_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36 Edg/149.0.0.0";
+export const SAKANA_MODELS = ["namazu"];
+
 // ---- MiMo free backend (Xiaomi) ----
 export const MIMO_HOST = "api.xiaomimimo.com";
 export const MIMO_CHAT_PATH = "/api/free-ai/openai/chat";
@@ -71,6 +79,7 @@ export const BACKEND_KEYS = [
   { id: "tokenrouter", label: "TokenRouter key", envVar: "TOKENROUTER_KEY", hint: "powers tokenrouter/ models", link: "https://tokenrouter.com", linkLabel: "get key ↗" },
   { id: "openrouter", label: "OpenRouter key", envVar: "OPENROUTER_KEY", hint: "powers vendor/model ids via OpenRouter", link: "https://openrouter.ai/keys", linkLabel: "get key ↗" },
   { id: "gemini", label: "Gemini key", envVar: "GEMINI_KEY", hint: "powers gemini-* models", link: "https://aistudio.google.com/apikey", linkLabel: "get key ↗" },
+  { id: "sakana", label: "Sakana cookie", envVar: "SAKANA_KEY", hint: "sakana-chat + cf_clearance cookie (IP-bound, expires hourly)", link: "https://chat.sakana.ai", linkLabel: "open ↗" },
 ];
 
 // Display metadata for the dashboard model list (name/context/throughput), keyed by bare alias.
@@ -82,6 +91,7 @@ export const MODEL_META: Record<string, { name: string; ctx: string; tps: number
   "mimo-v2.5-free": { name: "MiMo V2.5", ctx: "", tps: 42 },
   "nemotron-3-ultra-free": { name: "Nemotron 3 Ultra", ctx: "", tps: 17 },
   "gpt-5.6-mercury": { name: "GPT-5.6 Mercury", ctx: "", tps: 0 },
+  "sakana/namazu": { name: "Namazu (Sakana AI)", ctx: "", tps: 0 },
   "gemini-2.5-flash-lite": { name: "Gemini 2.5 Flash-Lite", ctx: "1M", tps: 91 },
   "claude-opus-4-8": { name: "Claude Opus 4.8", ctx: "200K", tps: 35 },
   "claude-sonnet-4-6": { name: "Claude Sonnet 4.6", ctx: "200K", tps: 32 },

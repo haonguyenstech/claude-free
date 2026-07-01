@@ -18,7 +18,7 @@ import {
   MIMO_MARKER,
 } from "./models";
 
-export type Backend = "anthropic" | "gemini" | "cli" | "openrouter" | "zen" | "mimo" | "tokenrouter";
+export type Backend = "anthropic" | "gemini" | "cli" | "openrouter" | "zen" | "mimo" | "tokenrouter" | "sakana";
 export interface Parsed {
   model: string;
   think: boolean;
@@ -35,6 +35,7 @@ export function parseModel(m: string | undefined): Parsed {
     return { model: TOKENROUTER_MODELS[s] || s, think, backend: "tokenrouter" };
   }
   if (base === "mimo-auto" || base === "mimo/mimo-auto") return { model: "mimo-auto", think, backend: "mimo" };
+  if (base === "sakana/namazu" || base === "sakana" || base === "namazu") return { model: "namazu", think, backend: "sakana" };
   if (base.startsWith("claude")) return { model: base, think, backend: "anthropic" };
   if (base.startsWith("gemini")) return { model: base, think, backend: "gemini" };
   if (base.startsWith("cli/")) return { model: base.slice(4), think, backend: "cli" };

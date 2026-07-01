@@ -8,6 +8,7 @@ import { OPENROUTER_FREE_MODELS } from "./models";
 import { serverKey } from "./config";
 import { mimoJwt } from "./mimo";
 import { callBackend, collectBody, forwardAnthropic, forwardClaudeCli, streamTranslate } from "./upstream";
+import { forwardSakana } from "./sakana";
 import { jsonError } from "./errors";
 import { makeSseResponse } from "./sse";
 
@@ -24,6 +25,9 @@ export async function routeMessages(
   // CLI backend: real Claude models. Forwards to api.anthropic.com using the host's Claude Code
   // subscription login (full tool/subagent support), falling back to the local `claude` CLI.
   if (parsed.backend === "cli") return forwardClaudeCli(reqHeaders, areq, parsed.model, signal, onStreamComplete);
+  // Sakana (chat.sakana.ai / HuggingFace chat-ui): bespoke create-conversation + form-post protocol,
+  // cookie auth, no tools. Handles its own request/response translation — not an OpenAI round-trip.
+  if (parsed.backend === "sakana") return forwardSakana(areq, parsed.model, signal, onStreamComplete);
 
   const oaBody = toOpenAI(areq);
   // OpenRouter free models get throttled (429) unpredictably; attach free siblings as a fallback list

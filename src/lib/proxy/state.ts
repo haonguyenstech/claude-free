@@ -8,6 +8,7 @@ import {
   OPENROUTER_FREE_MODELS,
   CLI_MODELS,
   TOKENROUTER_MODELS,
+  SAKANA_MODELS,
   MODEL_META,
   BACKEND_KEYS,
 } from "./models";
@@ -122,6 +123,7 @@ export function buildState() {
       anthropic: ANTHROPIC_MODELS.map((id) => modelEntry(id, id, off, tests)),
       tokenrouter: Object.keys(TOKENROUTER_MODELS).map((a) => modelEntry("tokenrouter/" + a, a, off, tests)),
       gemini: GEMINI_MODELS.map((id) => modelEntry(id, id, off, tests)),
+      sakana: SAKANA_MODELS.map((id) => modelEntry("sakana/" + id, "sakana/" + id, off, tests)),
       openrouter: OPENROUTER_FREE_MODELS.map((id) => modelEntry(id, id, off, tests)),
       cli: CLI_MODELS.map((id) => modelEntry("cli/" + id, id, off, tests)),
     },
