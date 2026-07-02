@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   Clock,
   Boxes,
-  KeyRound,
   ShieldCheck,
   ArrowUpRight,
   Power,
@@ -24,13 +23,13 @@ import { Switch } from "@/components/ui/switch"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useDashboard } from "@/hooks/use-dashboard"
 import { useToast } from "@/hooks/use-toast"
-import { countServedModels, fmtAge, setServerEnabled, type Backend, type DashboardState } from "@/lib/api"
+import { countServedModels, fmtAge, setServerEnabled, type DashboardState } from "@/lib/api"
 
 type Tone = "green" | "red" | "amber" | "dark"
 const toneCls: Record<Tone, string> = {
-  green: "bg-mint-soft text-positive",
-  red: "bg-[#fdecea] text-destructive",
-  amber: "bg-[#fff4e2] text-amber",
+  green: "bg-[#E6F4EA] text-positive",
+  red: "bg-[#FCE8E6] text-destructive",
+  amber: "bg-[#FEF7E0] text-amber",
   dark: "bg-secondary text-forest",
 }
 
@@ -55,13 +54,12 @@ export default function OverviewPage() {
     return (
       <div className="flex flex-col gap-[18px]">
         <Skeleton className="h-[92px] rounded-[var(--radius-xl)]" />
-        <div className="grid grid-cols-2 gap-[18px] xl:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
+        <div className="grid grid-cols-2 gap-[18px] sm:grid-cols-3 xl:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-[104px] rounded-[var(--radius-md)]" />
           ))}
         </div>
-        <div className="grid gap-[18px] lg:grid-cols-2">
-          <Skeleton className="h-64 rounded-[var(--radius-xl)]" />
+        <div className="grid gap-[18px]">
           <Skeleton className="h-64 rounded-[var(--radius-xl)]" />
         </div>
       </div>
@@ -70,7 +68,6 @@ export default function OverviewPage() {
 
   const on = state.server.enabled
   const modelCount = countServedModels(state.models)
-  const liveBackends = state.backends.filter((b) => b.set)
   const total = state.stats.total
   const successRate = total ? Math.round(((total - state.stats.errors) / total) * 1000) / 10 : 100
   const host = state.server.host === "0.0.0.0" ? "localhost" : state.server.host
@@ -91,12 +88,6 @@ export default function OverviewPage() {
     },
     { label: "Uptime", value: fmtAge(state.server.uptimeSec), icon: Clock, tone: "dark" },
     { label: "Models served", value: modelCount, icon: Boxes, tone: "dark" },
-    {
-      label: "Backends live",
-      value: `${liveBackends.length}/${state.backends.length}`,
-      icon: KeyRound,
-      tone: liveBackends.length ? "green" : "dark",
-    },
     { label: "API keys", value: state.gate.count, icon: ShieldCheck, tone: state.gate.count ? "dark" : "amber" },
   ]
 
@@ -105,13 +96,13 @@ export default function OverviewPage() {
       <Card
         className={cn(
           "flex flex-wrap items-center gap-x-4 gap-y-3 px-6 py-5 transition-colors",
-          on ? "" : "border-[rgba(229,86,75,0.35)] bg-[#fdecea]",
+          on ? "" : "border-[rgba(217,48,37,0.35)] bg-[#FCE8E6]",
         )}
       >
         <span
           className={cn(
             "grid size-11 place-items-center rounded-[12px]",
-            on ? "bg-mint-soft text-positive" : "bg-white text-destructive",
+            on ? "bg-[#E6F4EA] text-positive" : "bg-white text-destructive",
           )}
         >
           <Power className="size-5" />
@@ -137,13 +128,13 @@ export default function OverviewPage() {
         />
       </Card>
 
-      <section className="grid grid-cols-2 gap-[18px] xl:grid-cols-3">
+      <section className="grid grid-cols-2 gap-[18px] sm:grid-cols-3 xl:grid-cols-5">
         {stats.map((s) => {
           const Icon = s.icon
           return (
             <Card
               key={s.label}
-              className="rounded-[var(--radius-md)] px-[18px] pb-4 pt-[18px] transition-all hover:-translate-y-0.5 hover:shadow-[0_1px_2px_rgba(10,40,30,0.05),0_24px_48px_-16px_rgba(10,40,30,0.22)]"
+              className="rounded-[var(--radius-md)] px-[18px] pb-4 pt-[18px] transition-all hover:-translate-y-0.5 hover:shadow-[0_2px_8px_rgba(18,19,23,0.05),0_16px_32px_-18px_rgba(18,19,23,0.16)]"
             >
               <div className="flex items-center gap-2.5 text-[12.5px] font-semibold text-muted-foreground">
                 <span className={cn("grid size-8 place-items-center rounded-[9px]", toneCls[s.tone])}>
@@ -158,8 +149,7 @@ export default function OverviewPage() {
         })}
       </section>
 
-      <div className="grid gap-[18px] lg:grid-cols-2">
-        <BackendsPanel backends={state.backends} />
+      <div className="grid gap-[18px]">
         <ServerPanel state={state} lastAgo={lastAgo} />
       </div>
     </div>
@@ -192,54 +182,6 @@ function Endpoint({ url }: { url: string }) {
         <Copy className="size-3.5 text-muted-foreground group-hover:text-forest" />
       )}
     </button>
-  )
-}
-
-function BackendsPanel({ backends }: { backends: Backend[] }) {
-  return (
-    <Card className="overflow-hidden">
-      <div className="flex items-center gap-2.5 border-b border-border-soft px-6 py-4">
-        <span className="grid size-8 place-items-center rounded-[9px] bg-secondary text-forest">
-          <KeyRound className="size-4" />
-        </span>
-        <div className="text-[14px] font-extrabold tracking-[-0.02em]">Backends</div>
-        <span className="flex-1" />
-        <Link
-          href="/dashboard/credentials"
-          className="inline-flex items-center gap-1 text-[12.5px] font-bold text-positive hover:underline"
-        >
-          Manage <ArrowUpRight className="size-3.5" />
-        </Link>
-      </div>
-      <ul className="px-6">
-        {backends.map((b) => (
-          <li key={b.id} className="flex items-center gap-3 border-b border-border-soft py-3 last:border-0">
-            <span
-              className={cn(
-                "size-2 shrink-0 rounded-full",
-                b.set ? "bg-mint shadow-[0_0_0_3px_rgba(24,224,140,0.25)]" : "bg-border",
-              )}
-            />
-            <div className="min-w-0">
-              <div className="truncate text-[13.5px] font-bold tracking-[-0.01em]">{b.label}</div>
-              <div className="truncate font-mono text-[11px] text-muted-foreground">{b.set ? b.masked : b.hint}</div>
-            </div>
-            <span className="flex-1" />
-            {b.fromEnv ? (
-              <span className="rounded-[6px] bg-secondary px-2 py-0.5 text-[10.5px] font-bold text-forest">env</span>
-            ) : null}
-            <span
-              className={cn(
-                "rounded-[6px] px-2 py-0.5 text-[11px] font-bold",
-                b.set ? "bg-mint-soft text-positive" : "bg-muted text-muted-foreground",
-              )}
-            >
-              {b.set ? "live" : "missing"}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </Card>
   )
 }
 
@@ -283,7 +225,7 @@ function ServerPanel({ state, lastAgo }: { state: DashboardState; lastAgo: strin
         <span className="flex-1" />
         <Link
           href="/dashboard/models"
-          className="inline-flex items-center gap-1 text-[12.5px] font-bold text-positive hover:underline"
+          className="inline-flex items-center gap-1 text-[12.5px] font-bold text-mint hover:underline"
         >
           Test models <ArrowUpRight className="size-3.5" />
         </Link>

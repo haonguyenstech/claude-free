@@ -64,7 +64,36 @@ function expiryState(t: Token): ExpiryState {
   return { text: `expires in ${fmtAge(sec)}`, expired: false, soon: sec < 3 * 86400 }
 }
 
-function KeyCard({
+function IconButton({
+  label,
+  onClick,
+  danger,
+  children,
+}: {
+  label: string
+  onClick: () => void
+  danger?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className={cn(
+        "grid size-8 place-items-center rounded-lg transition-all duration-200 active:scale-[0.94]",
+        danger
+          ? "text-destructive hover:bg-[#FCE8E6]"
+          : "text-muted-foreground hover:bg-secondary hover:text-forest",
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
+function KeyRow({
   t,
   copied,
   onCopy,
@@ -116,13 +145,19 @@ function KeyCard({
   }
 
   return (
-    <Card className="flex items-center gap-3 p-4 transition-all hover:-translate-y-0.5 hover:shadow-[0_1px_2px_rgba(10,40,30,0.05),0_24px_48px_-16px_rgba(10,40,30,0.22)]">
-      <span className="grid size-10 shrink-0 place-items-center rounded-[11px] bg-mint-soft text-positive">
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-2.5 border-b border-border-soft px-6 py-4 transition-colors last:border-0 hover:bg-muted/50">
+      <span
+        className={cn(
+          "grid size-10 shrink-0 place-items-center rounded-[11px]",
+          exp.expired ? "bg-[#FCE8E6] text-destructive" : "bg-[#E6F4EA] text-positive",
+        )}
+      >
         <KeyRound className="size-5" />
       </span>
-      <div className="min-w-0 flex-1">
+
+      <div className="min-w-[220px] flex-1">
         {editing ? (
-          <div className="flex items-center gap-1.5">
+          <div className="flex max-w-[320px] items-center gap-1.5">
             <Input
               autoFocus
               value={draft}
@@ -160,18 +195,23 @@ function KeyCard({
           <div className="flex items-center gap-1.5">
             <span
               className={cn(
-                "truncate text-[13px] font-semibold",
-                t.label ? "text-foreground" : "italic text-muted-foreground",
+                "truncate text-[13.5px] font-bold tracking-[-0.01em]",
+                t.label ? "text-foreground" : "italic font-medium text-muted-foreground",
               )}
             >
               {t.label || "unnamed"}
             </span>
+            {exp.expired ? (
+              <span className="rounded-[6px] bg-[#FCE8E6] px-1.5 py-0.5 text-[10px] font-bold text-destructive">
+                expired
+              </span>
+            ) : null}
             <button
               type="button"
               onClick={startEdit}
               aria-label="Edit label"
               title="Rename"
-              className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-forest"
+              className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground opacity-70 transition-colors hover:bg-secondary hover:text-forest hover:opacity-100"
             >
               <Pencil className="size-3.5" />
             </button>
@@ -180,21 +220,18 @@ function KeyCard({
         <code className="mt-0.5 block truncate font-mono text-[11.5px] text-muted-foreground">
           {reveal ? t.value : t.masked}
         </code>
-        <span className="tnum block text-[11.5px] font-medium text-muted-foreground">
-          {usageLine(t)}
-        </span>
-        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+      </div>
+
+      <div className="flex min-w-[190px] flex-col gap-1">
+        <span className="tnum text-[12px] font-medium text-muted-foreground">{usageLine(t)}</span>
+        <div className="flex flex-wrap items-center gap-1.5">
           <button
             type="button"
             onClick={() => setExpiryOpen((o) => !o)}
             title="Set expiry"
             className={cn(
-              "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold hover:bg-secondary",
-              exp.expired
-                ? "text-destructive"
-                : exp.soon
-                  ? "text-amber"
-                  : "text-muted-foreground hover:text-forest",
+              "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold transition-colors hover:bg-secondary",
+              exp.expired ? "text-destructive" : exp.soon ? "text-amber" : "text-muted-foreground hover:text-forest",
             )}
           >
             <Clock className="size-3" />
@@ -207,7 +244,7 @@ function KeyCard({
                   type="button"
                   disabled={savingExpiry}
                   onClick={() => void applyExpiry(p.days)}
-                  className="rounded-md border border-border px-1.5 py-0.5 text-[11px] font-bold hover:bg-secondary disabled:opacity-50"
+                  className="rounded-md border border-border bg-card px-1.5 py-0.5 text-[11px] font-bold transition-colors hover:bg-secondary disabled:opacity-50"
                 >
                   {p.label}
                 </button>
@@ -215,36 +252,19 @@ function KeyCard({
             : null}
         </div>
       </div>
-      <div className="flex shrink-0 items-center gap-1 self-start">
-        <button
-          type="button"
-          onClick={() => setReveal((r) => !r)}
-          aria-label={reveal ? "Hide key" : "Reveal key"}
-          title={reveal ? "Hide" : "Reveal"}
-          className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-forest"
-        >
+
+      <div className="ml-auto flex shrink-0 items-center gap-1">
+        <IconButton label={reveal ? "Hide key" : "Reveal key"} onClick={() => setReveal((r) => !r)}>
           {reveal ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-        </button>
-        <button
-          type="button"
-          onClick={() => onCopy(t.value)}
-          aria-label="Copy API key to clipboard"
-          title="Copy to clipboard"
-          className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-forest"
-        >
+        </IconButton>
+        <IconButton label="Copy API key to clipboard" onClick={() => onCopy(t.value)}>
           {copied ? <Check className="size-4 text-positive" /> : <Copy className="size-4" />}
-        </button>
-        <button
-          type="button"
-          onClick={() => onRemove(t.value)}
-          aria-label="Remove API key"
-          title="Remove"
-          className="grid size-8 place-items-center rounded-lg text-destructive hover:bg-[#fdecea]"
-        >
+        </IconButton>
+        <IconButton label="Remove API key" danger onClick={() => onRemove(t.value)}>
           <Trash2 className="size-4" />
-        </button>
+        </IconButton>
       </div>
-    </Card>
+    </li>
   )
 }
 
@@ -264,11 +284,7 @@ export default function TokensPage() {
     return (
       <div className="flex flex-col gap-[18px]">
         <Skeleton className="h-[78px] rounded-[var(--radius-xl)]" />
-        <div className="grid gap-[14px] xl:grid-cols-2">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-[74px] rounded-[var(--radius-xl)]" />
-          ))}
-        </div>
+        <Skeleton className="h-[320px] rounded-[var(--radius-xl)]" />
       </div>
     )
   }
@@ -337,18 +353,20 @@ export default function TokensPage() {
     }
   }
 
+  const totalRequests = tokens.reduce((n, t) => n + t.requestCount, 0)
+
   return (
     <div className="flex flex-col gap-[18px]">
       <Card
         className={cn(
           "flex flex-wrap items-center gap-x-4 gap-y-3 px-6 py-4",
-          tokens.length === 0 && "border-[rgba(229,86,75,0.35)] bg-[#fdecea]",
+          tokens.length === 0 && "border-[rgba(217,48,37,0.35)] bg-[#FCE8E6]",
         )}
       >
         <span
           className={cn(
             "grid size-10 place-items-center rounded-[11px]",
-            tokens.length ? "bg-mint-soft text-positive" : "bg-white text-destructive",
+            tokens.length ? "bg-[#E6F4EA] text-positive" : "bg-white text-destructive",
           )}
         >
           <ShieldCheck className="size-5" />
@@ -356,11 +374,7 @@ export default function TokensPage() {
         <div className="min-w-[160px]">
           <div className="flex items-center gap-2 text-[14px] font-extrabold tracking-[-0.02em]">
             API keys
-            {tokens.length ? (
-              <Badge variant="on">{tokens.length} active</Badge>
-            ) : (
-              <Badge variant="off">none</Badge>
-            )}
+            {tokens.length ? <Badge variant="on">{tokens.length} active</Badge> : <Badge variant="off">none</Badge>}
           </div>
           <div className="text-[12.5px] font-medium text-muted-foreground">
             {tokens.length
@@ -376,7 +390,7 @@ export default function TokensPage() {
       </Card>
 
       {revealed && (
-        <Card className="border-[rgba(24,224,140,0.4)] bg-mint-soft p-4">
+        <Card className="border-[rgba(50,121,249,0.4)] bg-mint-soft p-4">
           <div className="flex items-center gap-2 text-[12.5px] font-bold text-forest">
             <KeyRound className="size-4" />
             New API key — copy it now, it won&apos;t be shown in full again
@@ -408,22 +422,34 @@ export default function TokensPage() {
       )}
 
       {tokens.length > 0 ? (
-        <div className="grid gap-[14px] xl:grid-cols-2">
-          {tokens.map((t) => (
-            <KeyCard
-              key={t.masked}
-              t={t}
-              copied={copied === t.value}
-              onCopy={copyKey}
-              onRemove={setPendingDelete}
-              onSaveLabel={onSaveLabel}
-              onSaveExpiry={onSaveExpiry}
-            />
-          ))}
-        </div>
+        <Card className="overflow-hidden">
+          <div className="flex flex-wrap items-center gap-2.5 border-b border-border-soft px-6 py-4">
+            <span className="grid size-8 place-items-center rounded-[9px] bg-secondary text-forest">
+              <KeyRound className="size-4" />
+            </span>
+            <div className="text-[14px] font-extrabold tracking-[-0.02em]">Active keys</div>
+            <span className="text-[12px] text-muted-foreground tnum">
+              · {tokens.length} key{tokens.length === 1 ? "" : "s"} · {totalRequests.toLocaleString()} request
+              {totalRequests === 1 ? "" : "s"} served
+            </span>
+          </div>
+          <ul>
+            {tokens.map((t) => (
+              <KeyRow
+                key={t.masked}
+                t={t}
+                copied={copied === t.value}
+                onCopy={copyKey}
+                onRemove={setPendingDelete}
+                onSaveLabel={onSaveLabel}
+                onSaveExpiry={onSaveExpiry}
+              />
+            ))}
+          </ul>
+        </Card>
       ) : (
         <Card className="flex flex-col items-center gap-3 px-6 py-12 text-center">
-          <span className="grid size-12 place-items-center rounded-full bg-[#fdecea] text-destructive">
+          <span className="grid size-12 place-items-center rounded-full bg-[#FCE8E6] text-destructive">
             <ShieldCheck className="size-6" />
           </span>
           <div className="text-[14px] font-bold">No API keys yet</div>
@@ -438,9 +464,8 @@ export default function TokensPage() {
       )}
 
       <p className="text-xs leading-relaxed text-muted-foreground">
-        Generate creates a fresh random key and copies it to your clipboard — copy it now, it won&apos;t be shown in
-        full again. Reveal and copy any key from its card. Removing a key takes effect immediately. The proxy fails
-        closed: with zero keys, every request is rejected.
+        Generate creates a fresh random key and copies it to your clipboard — it won&apos;t be shown in full again.
+        Removing a key takes effect immediately. The proxy fails closed: with zero keys, every request is rejected.
       </p>
 
       <ConfirmDialog

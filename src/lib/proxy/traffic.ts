@@ -20,12 +20,14 @@ export type RecentRequest = {
   ttftMs: number;
   inputTokens: number;
   outputTokens: number;
+  costUsd: number | null;
   stream: boolean;
 };
 
 export type ModelPerf = {
   model: string;
   count: number;
+  costUsd: number; // summed real gateway-reported cost (0 when the backend never reports one)
   avgTtftMs: number | null; // null when no streamed sample with a TTFT
   tokPerSec: number | null; // decode throughput (output tokens / decode time), null when unknown
 };
@@ -37,6 +39,7 @@ export type TokenUsage = {
   errors: number;
   inputTokens: number;
   outputTokens: number;
+  costUsd: number;
   lastAt: number | null;
 };
 
@@ -48,6 +51,7 @@ export type TrafficData = {
     avgLatencyMs: number;
     inputTokens: number;
     outputTokens: number;
+    costUsd: number;
   };
   byBackend: { backend: string; count: number; errors: number }[];
   byModel: ModelPerf[];
@@ -55,7 +59,7 @@ export type TrafficData = {
   // One bucket per hour for the last 24h, oldest first. `t` is the bucket-start epoch (ms).
   series: { t: number; count: number; errors: number }[];
   // One bucket per day for the last 14d, oldest first — token-volume rollup. `t` = day-start epoch.
-  daily: { t: number; count: number; inputTokens: number; outputTokens: number }[];
+  daily: { t: number; count: number; inputTokens: number; outputTokens: number; costUsd: number }[];
   rateLimits: RateLimitRow[];
   recent: RecentRequest[];
   lastAt: number | null;
@@ -72,6 +76,7 @@ export function buildTraffic(): TrafficData {
       avgLatency: sql<number>`avg(latency_ms)`,
       inTok: sql<number>`coalesce(sum(input_tokens), 0)`,
       outTok: sql<number>`coalesce(sum(output_tokens), 0)`,
+      cost: sql<number>`coalesce(sum(cost_usd), 0)`,
       lastAt: sql<number>`max(ts)`,
     })
     .from(requestLogs)
@@ -97,6 +102,7 @@ export function buildTraffic(): TrafficData {
     .select({
       model: requestLogs.model,
       count: sql<number>`count(*)`,
+      cost: sql<number>`coalesce(sum(cost_usd), 0)`,
       avgTtft: sql<number>`avg(case when ttft_ms is not null and status >= 200 and status < 400 then ttft_ms end)`,
       outSum: sql<number>`coalesce(sum(case when ttft_ms is not null and latency_ms > ttft_ms and status >= 200 and status < 400 then output_tokens else 0 end), 0)`,
       decodeMs: sql<number>`coalesce(sum(case when ttft_ms is not null and latency_ms > ttft_ms and status >= 200 and status < 400 then latency_ms - ttft_ms else 0 end), 0)`,
@@ -140,21 +146,22 @@ export function buildTraffic(): TrafficData {
       count: sql<number>`count(*)`,
       inTok: sql<number>`coalesce(sum(input_tokens), 0)`,
       outTok: sql<number>`coalesce(sum(output_tokens), 0)`,
+      cost: sql<number>`coalesce(sum(cost_usd), 0)`,
     })
     .from(requestLogs)
     .where(sql`ts >= ${sinceDay}`)
     .groupBy(sql`cast(ts / ${DAY_MS} as integer)`)
     .all();
-  const byDay = new Map<number, { count: number; inTok: number; outTok: number }>();
+  const byDay = new Map<number, { count: number; inTok: number; outTok: number; cost: number }>();
   for (const r of dayRows) {
-    byDay.set(Number(r.d), { count: Number(r.count), inTok: Number(r.inTok ?? 0), outTok: Number(r.outTok ?? 0) });
+    byDay.set(Number(r.d), { count: Number(r.count), inTok: Number(r.inTok ?? 0), outTok: Number(r.outTok ?? 0), cost: Number(r.cost ?? 0) });
   }
   const currentDay = Math.floor(now / DAY_MS);
   const daily: TrafficData["daily"] = [];
   for (let i = WINDOW_DAYS - 1; i >= 0; i--) {
     const d = currentDay - i;
     const hit = byDay.get(d);
-    daily.push({ t: d * DAY_MS, count: hit?.count ?? 0, inputTokens: hit?.inTok ?? 0, outputTokens: hit?.outTok ?? 0 });
+    daily.push({ t: d * DAY_MS, count: hit?.count ?? 0, inputTokens: hit?.inTok ?? 0, outputTokens: hit?.outTok ?? 0, costUsd: hit?.cost ?? 0 });
   }
 
   // Per-token usage (top 8 by volume). Labels come from access_tokens; env-only tokens have no row,
@@ -166,6 +173,7 @@ export function buildTraffic(): TrafficData {
       errors: sql<number>`sum(case when status >= 400 then 1 else 0 end)`,
       inTok: sql<number>`coalesce(sum(input_tokens), 0)`,
       outTok: sql<number>`coalesce(sum(output_tokens), 0)`,
+      cost: sql<number>`coalesce(sum(cost_usd), 0)`,
       lastAt: sql<number>`max(ts)`,
     })
     .from(requestLogs)
@@ -183,6 +191,7 @@ export function buildTraffic(): TrafficData {
     errors: Number(r.errors ?? 0),
     inputTokens: Number(r.inTok ?? 0),
     outputTokens: Number(r.outTok ?? 0),
+    costUsd: Number(r.cost ?? 0),
     lastAt: r.lastAt ? Number(r.lastAt) : null,
   }));
 
@@ -202,6 +211,7 @@ export function buildTraffic(): TrafficData {
     ttftMs: Number(r.ttftMs ?? 0),
     inputTokens: Number(r.inputTokens ?? 0),
     outputTokens: Number(r.outputTokens ?? 0),
+    costUsd: r.costUsd != null ? Number(r.costUsd) : null,
     stream: !!r.stream,
   }));
 
@@ -213,6 +223,7 @@ export function buildTraffic(): TrafficData {
       avgLatencyMs: Math.round(Number(agg?.avgLatency ?? 0)),
       inputTokens: Number(agg?.inTok ?? 0),
       outputTokens: Number(agg?.outTok ?? 0),
+      costUsd: Number(agg?.cost ?? 0),
     },
     byBackend: backendRows
       .filter((r) => r.backend)
@@ -225,6 +236,7 @@ export function buildTraffic(): TrafficData {
         return {
           model: r.model as string,
           count: Number(r.count),
+          costUsd: Number(r.cost ?? 0),
           avgTtftMs: r.avgTtft != null ? Math.round(Number(r.avgTtft)) : null,
           tokPerSec: decodeMs > 0 && outSum > 0 ? Math.round((outSum / (decodeMs / 1000)) * 10) / 10 : null,
         };

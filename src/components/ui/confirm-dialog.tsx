@@ -64,7 +64,7 @@ export function ConfirmDialog({
       <div
         className={cn(
           "relative w-full max-w-md rounded-[var(--radius-xl)] border border-border bg-card p-6",
-          "shadow-[0_1px_2px_rgba(10,40,30,0.06),0_32px_64px_-20px_rgba(10,40,30,0.4)]",
+          "shadow-[0_1px_2px_rgba(18,19,23,0.06),0_32px_64px_-20px_rgba(18,19,23,0.4)]",
           "cf-dialog-in",
         )}
       >
@@ -81,7 +81,7 @@ export function ConfirmDialog({
           <span
             className={cn(
               "grid size-11 shrink-0 place-items-center rounded-[12px]",
-              destructive ? "bg-[#fdecea] text-destructive" : "bg-mint-soft text-positive",
+              destructive ? "bg-[#FCE8E6] text-destructive" : "bg-[#E6F4EA] text-positive",
             )}
           >
             <AlertTriangle className="size-5" />

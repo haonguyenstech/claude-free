@@ -36,7 +36,7 @@ function LoginScreen() {
           <Wordmark className="text-[22px] text-forest" />
         </div>
 
-        <div className="rounded-[var(--radius-xl)] border border-border bg-card p-7 shadow-[0_1px_2px_rgba(10,40,30,0.05),0_24px_48px_-20px_rgba(10,40,30,0.25)]">
+        <div className="rounded-[var(--radius-xl)] border border-border bg-card p-7 shadow-[0_1px_2px_rgba(18,19,23,0.05),0_24px_48px_-20px_rgba(18,19,23,0.25)]">
           <h1 className="text-[20px] font-extrabold tracking-[-0.02em]">Sign in</h1>
           <p className="mt-1 text-[13px] font-medium text-muted-foreground">
             Log in to manage your proxy dashboard.
@@ -76,7 +76,7 @@ function LoginScreen() {
             </label>
 
             {error && (
-              <div className="rounded-lg border border-[rgba(229,86,75,0.35)] bg-[#fdecea] px-3 py-2 text-[12.5px] font-semibold text-destructive">
+              <div className="rounded-lg border border-[rgba(217,48,37,0.35)] bg-[#FCE8E6] px-3 py-2 text-[12.5px] font-semibold text-destructive">
                 {error}
               </div>
             )}

@@ -4,7 +4,7 @@
 // mode, and permission mode, then it launches Claude Code pointed at your deployed proxy server.
 //
 // Remote-only: the proxy runs on a server (see Dockerfile) and holds all backend keys. This client
-// stores nothing but your API secret key; it never spawns a local proxy.
+// stores nothing but your access token; it never spawns a local proxy.
 const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
@@ -12,12 +12,12 @@ const http = require("http");
 const https = require("https");
 const readline = require("readline");
 
-const VERSION = "2.6.0";
+const VERSION = "2.6.2";
 const DIR = __dirname;
 const KEYS_FILE = path.join(DIR, "keys.json");
 // Background/small-fast model for Claude Code's housekeeping calls (titles, summaries). Must be one
-// the server still serves — pinned to the no-key MiMo backend so it never burns Claude quota.
-const SMALL_MODEL = "mimo-auto";
+// the server still serves — pinned to the fastest OpenCode model so it never burns Claude quota.
+const SMALL_MODEL = "north-mini-code-free";
 // Where --update pulls the latest client from (override with CLAUDE_FREE_BASE).
 const UPDATE_BASE = process.env.CLAUDE_FREE_BASE || "https://raw.githubusercontent.com/haonguyenstech/claude-free/main";
 
@@ -25,68 +25,68 @@ const UPDATE_BASE = process.env.CLAUDE_FREE_BASE || "https://raw.githubuserconte
 // with CLAUDE_FREE_SERVER (or keys.json {"server": "..."}). Point this at your public domain once deployed.
 const DEFAULT_SERVER = "http://127.0.0.1:3000";
 
-// Model catalog. tier groups the picker; tps is from the local benchmark (tokens/sec, single-sample,
-// rough), ctx is the context window, star marks the recommended pick in each tier. Ordered by tps.
+// Model catalog. tier groups the picker; tps is kept for internal ordering only, ctx is the context
+// window, star marks the recommended pick.
 // { name, id, tier, ctx, tps, note, star }
 const MODELS = [
-  // --- FREE · no key needed --- (Zen via opencode.ai + Xiaomi MiMo; ordered by tok/s)
-  { name: "North Mini Code",   id: "north-mini-code-free",  tier: "free", ctx: "",   tps: 123, note: "fast coding model",        star: true },
-  { name: "MiMo Auto",         id: "mimo-auto",             tier: "free", ctx: "1M", tps: 71,  note: "free, no key" },
-  { name: "DeepSeek V4 Flash", id: "deepseek-v4-flash-free",tier: "free", ctx: "",   tps: 63,  note: "fast, clean · small model" },
-  { name: "Big Pickle",        id: "big-pickle",            tier: "free", ctx: "",   tps: 53,  note: "stealth, fast & clean" },
-  { name: "MiMo V2.5",         id: "mimo-v2.5-free",        tier: "free", ctx: "",   tps: 42,  note: "reasoning (shows thinking)" },
-  { name: "Nemotron 3 Ultra",  id: "nemotron-3-ultra-free", tier: "free", ctx: "",   tps: 17,  note: "550B, deepest · slow" },
-  // --- BYO-key models (key lives on the server) ---
-  { name: "GPT-5.6 Mercury",   id: "tokenrouter/gpt-5.6-mercury", tier: "paid", ctx: "",   tps: 0,  note: "TokenRouter" },
-  // --- Sakana AI (chat.sakana.ai · server-side cookie · emulated tool-calling) ---
-  { name: "Namazu",            id: "sakana/namazu",         tier: "sakana", ctx: "",   tps: 0,  note: "Sakana AI · tools (beta)", star: true },
-  // --- Gemini (Google AI Studio · server-side gemini key) ---
-  { name: "Gemini 2.5 Flash-Lite", id: "gemini-2.5-flash-lite", tier: "gemini", ctx: "1M", tps: 107, note: "Google · fastest",       star: true },
-
-  { name: "gpt-oss 120B",      id: "openai/gpt-oss-120b:free",                 tier: "openrouter", ctx: "131K", tps: 31, note: "OpenAI open · reliable", star: true },
-  { name: "Nemotron 3 Super",  id: "nvidia/nemotron-3-super-120b-a12b:free",   tier: "openrouter", ctx: "1M",   tps: 32, note: "NVIDIA · huge context" },
-  { name: "Gemma 4 31B",       id: "google/gemma-4-31b-it:free",               tier: "openrouter", ctx: "262K", tps: 40, note: "Google · clean output" },
-  { name: "gpt-oss 20B",       id: "openai/gpt-oss-20b:free",                  tier: "openrouter", ctx: "131K", tps: 33, note: "OpenAI open · lightweight" },
-  { name: "Nemotron Nano 12B", id: "nvidia/nemotron-nano-12b-v2-vl:free",      tier: "openrouter", ctx: "128K", tps: 43, note: "fastest · most reliable" },
-  // --- Anthropic (Claude models) ---
-  { name: "Claude Sonnet 4.6",   id: "cli/claude-sonnet-4-6",     tier: "cli", ctx: "200K", tps: 32, note: "balanced speed + capability", star: true },
-  { name: "Claude Opus 4.8",     id: "cli/claude-opus-4-8",       tier: "cli", ctx: "200K", tps: 35, note: "most capable" },
-  { name: "Claude Haiku 4.5",    id: "cli/claude-haiku-4-5-20251001", tier: "cli", ctx: "200K", tps: 50, note: "fastest · lightweight" },
+  // --- OpenCode · ready to use --- (Zen via opencode.ai)
+  { name: "North Mini Code",   id: "north-mini-code-free",   tier: "opencode", ctx: "",   tps: 123, note: "fast coding model",         star: true },
+  { name: "DeepSeek V4 Flash", id: "deepseek-v4-flash-free", tier: "opencode", ctx: "",   tps: 63,  note: "fast, clean · small model" },
+  { name: "Big Pickle",        id: "big-pickle",             tier: "opencode", ctx: "",   tps: 53,  note: "stealth, fast & clean" },
+  { name: "MiMo V2.5",         id: "mimo-v2.5-free",         tier: "opencode", ctx: "",   tps: 42,  note: "reasoning (shows thinking)" },
+  { name: "Nemotron 3 Ultra",  id: "nemotron-3-ultra-free",  tier: "opencode", ctx: "",   tps: 17,  note: "550B, deepest · slow" },
+  // --- ClinePass · extra models when enabled --- (api.cline.bot)
+  { name: "GLM-5.2",           id: "cline-pass/glm-5.2",          tier: "clinepass", ctx: "",   tps: 0, note: "general coding" },
+  { name: "Kimi K2.7 Code",    id: "cline-pass/kimi-k2.7-code",   tier: "clinepass", ctx: "1M", tps: 0, note: "large context" },
+  { name: "Kimi K2.6",         id: "cline-pass/kimi-k2.6",        tier: "clinepass", ctx: "1M", tps: 0, note: "large context" },
+  { name: "DeepSeek V4 Pro",   id: "cline-pass/deepseek-v4-pro",  tier: "clinepass", ctx: "",   tps: 0, note: "deep reasoning" },
+  { name: "DeepSeek V4 Flash", id: "cline-pass/deepseek-v4-flash",tier: "clinepass", ctx: "",   tps: 0, note: "fast" },
+  { name: "MiMo-V2.5",         id: "cline-pass/mimo-v2.5",        tier: "clinepass", ctx: "",   tps: 0, note: "reasoning" },
+  { name: "MiMo-V2.5-Pro",     id: "cline-pass/mimo-v2.5-pro",    tier: "clinepass", ctx: "",   tps: 0, note: "reasoning · pro" },
+  { name: "MiniMax M3",        id: "cline-pass/minimax-m3",       tier: "clinepass", ctx: "",   tps: 0, note: "general" },
+  { name: "Qwen3.7 Max",       id: "cline-pass/qwen3.7-max",      tier: "clinepass", ctx: "",   tps: 0, note: "largest Qwen" },
+  { name: "Qwen3.7 Plus",      id: "cline-pass/qwen3.7-plus",     tier: "clinepass", ctx: "",   tps: 0, note: "balanced Qwen" },
 ];
 
 const TIER_LABEL = {
-  free:  "  \x1b[1;38;5;208mFREE\x1b[0m \x1b[2m· no key needed\x1b[0m",
-  paid:  "  \x1b[1;38;5;39mTOKENROUTER\x1b[0m \x1b[2m· server API key\x1b[0m",
-  gemini:"  \x1b[1;38;5;39mGEMINI\x1b[0m \x1b[2m· Google AI Studio key\x1b[0m",
-  sakana:"  \x1b[1;38;5;39mSAKANA\x1b[0m \x1b[2m· server cookie · emulated tools (beta)\x1b[0m",
-  openrouter:"  \x1b[1;38;5;39mOPENROUTER\x1b[0m \x1b[2m· free models · needs server OpenRouter key\x1b[0m",
-  cli:  "  \x1b[1;38;5;39mANTHROPIC\x1b[0m \x1b[2m· Claude models\x1b[0m",
+  opencode:  "\x1b[38;5;244m╭─ Models /\x1b[0m \x1b[1;38;5;208mOpenCode\x1b[0m \x1b[2mready to use\x1b[0m",
+  clinepass: "\x1b[38;5;244m╭─ Models /\x1b[0m \x1b[1;38;5;39mClinePass\x1b[0m \x1b[2mextra models when enabled\x1b[0m",
 };
 // Hide whole tiers from the picker/--models (models still launch by id). Empty = show all.
 const HIDE_TIERS = new Set();
-// One model row. Selected rows are drawn in reverse video (no inner color, so the highlight is solid);
-// unselected rows color the speed badge by throughput (green fast / yellow mid / dim slow).
+const UI = {
+  r: "\x1b[0m",
+  dim: "\x1b[2m",
+  muted: "\x1b[90m",
+  cyan: "\x1b[36m",
+  gold: "\x1b[1;38;5;220m",
+  text: "\x1b[1;38;5;255m",
+  selected: "\x1b[48;5;238m",
+}
+const SETUP_LABEL = "\x1b[38;5;244m╭─ Setup\x1b[0m \x1b[2mserver and access token\x1b[0m";
+// One model row. Selected rows use a soft terminal background instead of raw reverse video.
 function fmtRow(m, sel) {
-  const star = m.star ? "⭐" : "  ";
-  const name = m.name.padEnd(18);
-  const tps = ((m.tps || "?") + " tok/s").padStart(10);
-  const ctx = (m.ctx || "").padStart(5);
-  if (sel) return `\x1b[7m ❯ ${star} ${name}${tps}  ${ctx}  ${m.note} \x1b[0m`;
-  const c = m.tps >= 50 ? 32 : m.tps >= 25 ? 33 : 90;
-  return `    ${star} ${name}\x1b[${c}m${tps}\x1b[0m  \x1b[90m${ctx}\x1b[0m  \x1b[90m${m.note}\x1b[0m`;
+  const mark = m.star ? "★" : " ";
+  const name = m.name.padEnd(24);
+  const ctxPlain = m.ctx ? `${m.ctx.padStart(3)} ctx` : "       ";
+  const ctx = m.ctx ? `${UI.cyan}${ctxPlain}${UI.r}` : "       ";
+  const note = `${UI.muted}${m.note}${UI.r}`;
+  if (sel) return `${UI.selected}${UI.cyan}▶${UI.r}${UI.selected} ${mark} ${name} ${ctxPlain}  ${m.note} ${UI.r}`;
+  const star = m.star ? UI.gold + mark + UI.r : " ";
+  return `${UI.muted}│${UI.r}   ${star} ${UI.text}${name}${UI.r} ${ctx}  ${note}`;
 }
 // The "change server" row pinned to the top of the model picker. Shows the active server URL.
 function fmtServerRow(url, sel) {
-  if (sel) return `\x1b[7m ❯  server: ${url}  · enter to change \x1b[0m`;
-  return `    \x1b[90mserver:\x1b[0m \x1b[36m${url}\x1b[0m  \x1b[90m· enter to change\x1b[0m`;
+  if (sel) return `${UI.selected}${UI.cyan}▶${UI.r}${UI.selected} Server   ${url}  · enter to change ${UI.r}`;
+  return `${UI.muted}│${UI.r}   ${UI.text}Server${UI.r}   ${UI.cyan}${url}${UI.r}  ${UI.muted}· enter to change${UI.r}`;
 }
-// The "set API key" row pinned under the server row. Shows the masked key (or "not set").
+// The "set access token" row pinned under the server row. Shows the masked token (or "not set").
 function fmtApiKeyRow(sel) {
   const t = getToken();
   const verb = t ? "change" : "set";
-  if (sel) return `\x1b[7m ❯  API key: ${maskKey(t)}  · enter to ${verb} \x1b[0m`;
+  if (sel) return `${UI.selected}${UI.cyan}▶${UI.r}${UI.selected} Token    ${maskKey(t)}  · enter to ${verb} ${UI.r}`;
   const col = t ? 36 : 33;
-  return `    \x1b[90mAPI key:\x1b[0m \x1b[${col}m${maskKey(t)}\x1b[0m  \x1b[90m· enter to ${verb}\x1b[0m`;
+  return `${UI.muted}│${UI.r}   ${UI.text}Token${UI.r}    \x1b[${col}m${maskKey(t)}${UI.r}  ${UI.muted}· enter to ${verb}${UI.r}`;
 }
 // Build the grouped entry list for menuRich: a spacer + label header at each tier change, then rows.
 function modelMenuEntries() {
@@ -101,7 +101,33 @@ function modelMenuEntries() {
 
 function loadKeys() { try { return JSON.parse(fs.readFileSync(KEYS_FILE, "utf8")); } catch { return {}; } }
 function saveKeys(k) { try { fs.writeFileSync(KEYS_FILE, JSON.stringify(k, null, 2)); } catch {} }
-// Read a line of input (URL, API key, …). We deliberately reuse the SAME raw-mode keypress mechanism
+function getOptions() {
+  const k = loadKeys();
+  return {
+    thinking: !!k.thinking,
+    bypass: !!k.bypassPermissions,
+  };
+}
+function saveOptions(opts) {
+  const k = loadKeys();
+  k.thinking = !!opts.thinking;
+  k.bypassPermissions = !!opts.bypass;
+  saveKeys(k);
+}
+function getLastModelId() {
+  return loadKeys().lastModel || "";
+}
+function saveLastModelId(id) {
+  const k = loadKeys();
+  k.lastModel = id;
+  saveKeys(k);
+}
+function fmtCheckbox(label, checked, hint, sel) {
+  const box = checked ? "[x]" : "[ ]";
+  if (sel) return `${UI.selected}${UI.cyan}▶${UI.r}${UI.selected} ${box} ${label.padEnd(10)} ${hint} ${UI.r}`;
+  return `${UI.muted}│${UI.r}   ${checked ? UI.cyan : UI.muted}${box}${UI.r} ${UI.text}${label.padEnd(10)}${UI.r} ${UI.muted}${hint}${UI.r}`;
+}
+// Read a line of input (URL, access token, …). We deliberately reuse the SAME raw-mode keypress mechanism
 // the arrow-key menus use, instead of readline.createInterface — interleaving a readline line-reader
 // with the menus' emitKeypressEvents decoder on the same stdin garbled/swallowed typed input (the
 // "can't type the server URL" bug). Handles typing, paste (chunks arrive as printable str), backspace,
@@ -141,23 +167,23 @@ function ask(q) {
 function serverUrl() {
   return (process.env.CLAUDE_FREE_SERVER || loadKeys().server || DEFAULT_SERVER || "").replace(/\/+$/, "");
 }
-// Resolve the API key: env > keys.json. Prompted + saved on first run if missing.
+// Resolve the access token: env > keys.json. Prompted + saved on first run if missing.
 // CLAUDE_FREE_TOKEN is the legacy env name, still honored for back-compat.
 function getToken() {
   return process.env.CLAUDE_FREE_API_KEY || process.env.CLAUDE_FREE_TOKEN || loadKeys().token || "";
 }
-// Mask an API key for display: "····1234", or "not set" when empty.
+// Mask an access token for display: "····1234", or "not set" when empty.
 function maskKey(t) {
   return t ? "····" + t.slice(-4) : "not set";
 }
-// Prompt the user to paste the API secret key and persist it to keys.json.
-// Returns the new (or unchanged) key. Used by both --set-key and the picker row.
+// Prompt the user to paste the access token and persist it to keys.json.
+// Returns the new (or unchanged) token. Used by both --set-key and the picker row.
 async function setApiKey() {
   const cur = getToken();
-  if (cur) console.log("Current API key: " + maskKey(cur));
-  console.log("Paste the API secret key from the proxy operator (Dashboard → API Keys).");
-  const v = await ask("API key: ");
-  if (!v) { console.log("no key entered — keeping the current one"); return cur; }
+  if (cur) console.log("Current token: " + maskKey(cur));
+  console.log("Paste your claude-free access token.");
+  const v = await ask("Access token: ");
+  if (!v) { console.log("no token entered — keeping the current one"); return cur; }
   const k = loadKeys(); k.token = v; saveKeys(k);
   console.log("saved to " + KEYS_FILE);
   return v;
@@ -271,7 +297,7 @@ function menuRich(title, entries, startPos = 0) {
     let pos = Math.min(Math.max(startPos, 0), pick.length - 1);
     const stdin = process.stdin;
     const render = (first) => {
-      const lines = [`\x1b[1m${title}\x1b[0m  \x1b[2m↑/↓ move · enter select · q quit\x1b[0m`];
+      const lines = [`\x1b[1;38;5;255m${title}\x1b[0m  \x1b[2m↑/↓ navigate · enter select · q quit\x1b[0m`];
       entries.forEach((e, i) => lines.push(e.header === undefined ? e.render(i === pick[pos]) : e.header));
       if (!first) process.stdout.write(`\x1b[${lines.length - 1}A`);
       process.stdout.write("\r" + lines.map((l) => l + "\x1b[K").join("\n"));
@@ -290,7 +316,15 @@ function menuRich(title, entries, startPos = 0) {
       if (!key) return;
       if (key.name === "up" || key.name === "k") pos = (pos - 1 + pick.length) % pick.length;
       else if (key.name === "down" || key.name === "j") pos = (pos + 1) % pick.length;
-      else if (key.name === "return") return done(entries[pick[pos]].value);
+      else if (key.name === "return") {
+        const entry = entries[pick[pos]];
+        if (typeof entry.action === "function") {
+          entry.action();
+          render(false);
+          return;
+        }
+        return done(entry.value);
+      }
       else if (key.name === "q" || (key.ctrl && key.name === "c")) return done(-1);
       else return;
       render(false);
@@ -314,7 +348,7 @@ function serverOnline(url) {
   });
 }
 
-// Validate the API key against the server before launching Claude Code, so a bad/expired key fails
+// Validate the access token against the server before launching Claude Code, so a bad/expired token fails
 // here with a clear message instead of as an opaque 401 deep inside Claude Code. Uses the cheap
 // count_tokens endpoint (auth-gated, no upstream model call). Resolves the HTTP status, or 0 on a
 // network error (non-fatal — only a definitive 401 blocks the launch).
@@ -337,7 +371,7 @@ function preflightKey(server, token) {
 
 // ---- CLI flags ----
 function printHelp() {
-  console.log(`claude-free v${VERSION}  -  run Claude Code on free AI models (hosted proxy)
+  console.log(`claude-free v${VERSION}  -  run Claude Code with ready-to-use models
 
 Usage:
   claude-free [options] [-- <claude args...>]
@@ -347,16 +381,16 @@ Options:
   -v, --version    print the version and exit
   -u, --update     update claude-free to the latest version from GitHub
       --models     list the available models and exit
-      --set-key    set/replace your API secret key (paste it), then exit
+      --set-key    set/replace your access token, then exit
       --set-server <url>  point the client at a proxy URL and save it, then exit
 
 Run with no options to pick a model interactively, then launch Claude Code against the
-hosted proxy. Anything after "--" is passed straight through to 'claude', e.g.
+configured server. Anything after "--" is passed straight through to 'claude', e.g.
   claude-free -- --resume
 
 Environment:
-  CLAUDE_FREE_SERVER   the hosted proxy URL (default: baked-in DEFAULT_SERVER)
-  CLAUDE_FREE_API_KEY  your API secret key for the server (else prompted once, saved to keys.json;
+  CLAUDE_FREE_SERVER   server URL (default: baked-in DEFAULT_SERVER)
+  CLAUDE_FREE_API_KEY  your access token (else prompted once, saved to keys.json;
                        CLAUDE_FREE_TOKEN is the legacy alias and still works)
   CLAUDE_FREE_BASE     source for --update (default: this repo's GitHub raw)`);
 }
@@ -365,14 +399,8 @@ function printModels() {
   console.log(`claude-free v${VERSION}  -  available models:\n`);
   for (const m of MODELS) {
     if (HIDE_TIERS.has(m.tier)) continue;
-    const tag = m.tier === "free" ? "(no key)"
-      : m.tier === "paid" ? "(server key)"
-      : m.tier === "gemini" ? "(gemini key)"
-      : m.tier === "openrouter" ? "(openrouter key)"
-      : m.tier === "cli" ? "(anthropic)"
-      : m.tier === "sakana" ? "(server cookie)"
-      : "(subscription)";
-    console.log(`  ${m.id.padEnd(40)} ${tag}\n    ${m.name} — ${m.note}${m.ctx ? " · " + m.ctx + " ctx" : ""}${m.tps ? " · ~" + m.tps + " tok/s" : ""}`);
+    const tag = m.tier === "opencode" ? "OpenCode" : "ClinePass";
+    console.log(`  ${m.id.padEnd(40)} ${tag}\n    ${m.name} — ${m.note}${m.ctx ? " · " + m.ctx + " ctx" : ""}`);
   }
 }
 
@@ -441,18 +469,28 @@ async function selfUpdate() {
   console.log("\nUpdated. Just run claude-free again.");
 }
 
-// Orange->gold ASCII wordmark, one palette color per line.
+// Terminal version of the app logo: dark tile + open C mark with the same color flow.
 function printLogo() {
-  const pal = [196, 202, 208, 214, 220];
-  const art = [
-    "  ____ _                 _        _____",
-    " / ___| | __ _ _   _  __| | ___  |  ___|_ __ ___  ___",
-    "| |   | |/ _` | | | |/ _` |/ _ \\ | |_ | '__/ _ \\/ _ \\",
-    "| |___| | (_| | |_| | (_| |  __/ |  _|| | |  __/  __/",
-    " \\____|_|\\__,_|\\__,_|\\__,_|\\___| |_|  |_|  \\___|\\___|",
-  ];
-  art.forEach((line, i) => console.log("\x1b[1;38;5;" + pal[i] + "m" + line + "\x1b[0m"));
-  console.log("   \x1b[2mfree AI models\x1b[0m");
+  const r = "\x1b[0m";
+  const border = "\x1b[38;5;244m";
+  const blue = "\x1b[1;38;5;39m";
+  const green = "\x1b[1;38;5;34m";
+  const yellow = "\x1b[1;38;5;220m";
+  const red = "\x1b[1;38;5;196m";
+  const white = "\x1b[1;38;5;255m";
+  const dim = "\x1b[2m";
+  const width = 42;
+  const line = (plain, styled) => {
+    const pad = " ".repeat(Math.max(0, width - 1 - plain.length));
+    console.log(`${border}│${r} ${styled}${pad}${border}│${r}`);
+  };
+
+  console.log(`${border}╭${"─".repeat(width)}╮${r}`);
+  line("╭━━━━   CLAUDE-FREE", `${blue}╭━━━━${r}   ${white}CLAUDE${blue}-FREE${r}`);
+  line("┃      Claude Code model picker", `${green}┃${r}      ${dim}Claude Code model picker${r}`);
+  line("┃      install · pick · run", `${yellow}┃${r}      ${dim}install · pick · run${r}`);
+  line("╰━━━━   free models from your CLI", `${red}╰━━━━${r}   ${dim}free models from your CLI${r}`);
+  console.log(`${border}╰${"─".repeat(width)}╯${r}`);
 }
 
 async function main() {
@@ -492,15 +530,39 @@ async function main() {
     if (!server) { console.log("cancelled"); process.exit(0); }
   }
 
-  // Model picker with a pinned "change server" row on top; default selection is the first model.
+  // Model picker with setup rows on top; option rows are toggles and are remembered.
   let sel;
+  let options = getOptions();
+  const lastModel = getLastModelId();
   while (true) {
     const entries = [
+      { header: SETUP_LABEL },
       { value: "__server__", render: (s) => fmtServerRow(server, s) },
       { value: "__apikey__", render: (s) => fmtApiKeyRow(s) },
+      {
+        value: "__thinking__",
+        render: (s) => fmtCheckbox("Thinking", options.thinking, options.thinking ? "deeper, slower" : "fast, direct", s),
+        action: () => {
+          options.thinking = !options.thinking;
+          saveOptions(options);
+        },
+      },
+      {
+        value: "__bypass__",
+        render: (s) => fmtCheckbox("Bypass", options.bypass, options.bypass ? "no prompts for edits/commands" : "ask before edits/commands", s),
+        action: () => {
+          options.bypass = !options.bypass;
+          saveOptions(options);
+        },
+      },
       ...modelMenuEntries(),
     ];
-    const mi = await menuRich("Pick a model", entries, 2);
+    const rememberedModelIndex = lastModel ? MODELS.findIndex((m) => m.id === lastModel) : -1;
+    const rememberedEntryIndex = rememberedModelIndex >= 0 ? entries.findIndex((e) => e.value === rememberedModelIndex) : -1;
+    const startPos = rememberedEntryIndex >= 0
+      ? entries.slice(0, rememberedEntryIndex + 1).filter((e) => e.header === undefined).length - 1
+      : 4;
+    const mi = await menuRich("Choose model", entries, startPos);
     if (mi === -1) { console.log("cancelled"); process.exit(0); }
     if (mi === "__server__") {
       const ns = await chooseServer();
@@ -512,53 +574,59 @@ async function main() {
       continue;
     }
     sel = MODELS[mi];
+    saveLastModelId(sel.id);
     break;
   }
 
-  const ri = await menu(`Reasoning mode for ${sel.name}?`, ["Without thinking  - fast, direct (recommended)", "With thinking     - deeper, slower"]);
-  if (ri < 0) { console.log("cancelled"); process.exit(0); }
+  const model = sel.id + (options.thinking ? ":think" : "");
 
-  const pi = await menu("Permission mode?", ["Normal             - ask before edits/commands (safe)", "Bypass permissions - run everything, no prompts (risky)"]);
-  if (pi < 0) { console.log("cancelled"); process.exit(0); }
-
-  const model = sel.id + (ri === 1 ? ":think" : "");
-
-  // The API key is this client's only secret — it authenticates to the server, which holds
-  // all the real backend keys. Prompted once, then cached in keys.json (or set via the picker row
-  // / --set-key at any time).
+  // The access token is this client's only secret. Prompted once, then cached in keys.json
+  // (or set via the picker row / --set-key at any time).
   let token = getToken();
   if (!token) {
-    console.log("\nThis launcher connects to a hosted proxy that requires an API secret key.");
-    console.log("Ask the server operator for your key.");
+    console.log("\nThis launcher needs an access token before it can start Claude Code.");
     token = await setApiKey();
-    if (!token) { console.log("no API key entered, aborting"); process.exit(1); }
+    if (!token) { console.log("no token entered, aborting"); process.exit(1); }
   }
 
   // Preflight the key so an invalid/expired one fails here with a clear message, not as an opaque
   // 401 inside Claude Code. Only a definitive 401 blocks; network hiccups (0) fall through.
   let pf = await preflightKey(server, token);
   if (pf === 401) {
-    console.log("\n\x1b[33mThe server rejected your API key — it's invalid or expired.\x1b[0m");
+    console.log("\n\x1b[33mThe server rejected your token — it's invalid or expired.\x1b[0m");
     token = await setApiKey();
     if (token) pf = await preflightKey(server, token);
     if (!token || pf === 401) {
-      console.log("Still rejected — aborting. Ask the operator for a fresh key, then run: claude-free --set-key");
+      console.log("Still rejected — aborting. Request a fresh token, then run: claude-free --set-key");
       process.exit(1);
     }
   }
 
   const args = [...passthru];
-  if (pi === 1) args.push("--dangerously-skip-permissions");
+  if (options.bypass) args.push("--dangerously-skip-permissions");
   // Selections done — wipe the picker (and scrollback) so Claude Code starts on a clean screen.
   process.stdout.write("\x1b[2J\x1b[3J\x1b[H");
-  console.log(`> launching ${sel.name}${ri === 1 ? " · thinking" : ""}${pi === 1 ? " · bypass" : ""}\n`);
+  console.log(`> ${sel.name}${options.thinking ? " · thinking" : ""}${options.bypass ? " · bypass" : ""}\n`);
 
   const env = { ...process.env,
     ANTHROPIC_BASE_URL: server,
     ANTHROPIC_AUTH_TOKEN: token,
+    // Blank any inherited ANTHROPIC_API_KEY (e.g. a stale HF token from the hf-claude
+    // shell function) so it can't compete with AUTH_TOKEN. AUTH_TOKEN wins per Claude
+    // Code's precedence, but clearing it removes all ambiguity — and the cmux opt-out
+    // below would otherwise preserve a leaked key.
+    ANTHROPIC_API_KEY: "",
     ANTHROPIC_MODEL: model,
     ANTHROPIC_SMALL_FAST_MODEL: SMALL_MODEL,
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+    // cmux's claude wrapper (cmux-claude-wrapper) intentionally DELETES inherited
+    // ANTHROPIC_MODEL / ANTHROPIC_SMALL_FAST_MODEL / ANTHROPIC_API_KEY before exec'ing
+    // the real claude, so a parent shell's stale selection can't leak into a cmux session.
+    // Inside cmux that strips the model we just picked, and Claude Code falls back to
+    // ~/.claude/settings.json (e.g. opus[1m]) — i.e. it shows the official Anthropic model
+    // instead of ours. This opt-out tells the wrapper to keep our selection. Harmless
+    // outside cmux (the wrapper isn't on PATH there). See CMUX_PRESERVE_CLAUDE_AUTH_SELECTION_ENV.
+    CMUX_PRESERVE_CLAUDE_AUTH_SELECTION_ENV: "1",
   };
   // Fully release stdin before handing it to claude. The picker left Node's readline reading
   // keystrokes; if we don't detach, Node and claude both read the same TTY and typed characters

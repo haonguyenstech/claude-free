@@ -47,7 +47,7 @@ function SelectContent({
         data-slot="select-content"
         className={cn(
           "relative z-50 max-h-[var(--radix-select-content-available-height)] min-w-[8rem] overflow-hidden rounded-[var(--radius-md)] border border-border bg-popover text-popover-foreground",
-          "shadow-[0_1px_2px_rgba(10,40,30,0.06),0_20px_40px_-16px_rgba(10,40,30,0.28)]",
+          "shadow-[0_1px_2px_rgba(18,19,23,0.06),0_20px_40px_-16px_rgba(18,19,23,0.28)]",
           "cf-dialog-in",
           position === "popper" && "data-[side=bottom]:translate-y-1 data-[side=top]:-translate-y-1",
           className,

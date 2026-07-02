@@ -1,19 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import {
-  Check,
-  Coins,
-  Copy,
-  ExternalLink,
-  Eye,
-  EyeOff,
-  KeyRound,
-  Lock,
-  Sparkles,
-  Waypoints,
-  type LucideIcon,
-} from "lucide-react"
+import { useState } from "react"
+import { KeyRound, ExternalLink, AlertTriangle, Check, X, Pencil, Plus, Trash2, ShieldCheck } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { Card } from "@/components/ui/card"
@@ -23,236 +11,209 @@ import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useDashboard } from "@/hooks/use-dashboard"
 import { useToast } from "@/hooks/use-toast"
-import { saveKey, removeKey, type Backend } from "@/lib/api"
+import { setBackendKey, type DashboardState } from "@/lib/api"
 
-// Per-provider presentation — icon + accent tile so the three backends read as distinct cards.
-const META: Record<string, { icon: LucideIcon; tile: string }> = {
-  tokenrouter: { icon: Coins, tile: "bg-[#fff4e2] text-[#c77f10]" },
-  openrouter: { icon: Waypoints, tile: "bg-[#edeeff] text-[#4f57c4]" },
-  gemini: { icon: Sparkles, tile: "bg-[#f3ecff] text-[#7c4dff]" },
-}
-const FALLBACK = { icon: KeyRound, tile: "bg-secondary text-forest" }
+type Backend = DashboardState["backends"][number]
 
-async function copyText(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text)
-      return true
-    }
-  } catch {
-    /* fall through to legacy path */
+function BackendRow({
+  b,
+  busy,
+  onSave,
+  onClear,
+}: {
+  b: Backend
+  busy: boolean
+  onSave: (id: string, value: string) => Promise<void>
+  onClear: (id: string) => Promise<void>
+}) {
+  const [open, setOpen] = useState(false)
+  const [draft, setDraft] = useState("")
+
+  const status = b.fromEnv ? "env" : b.set ? "on" : "off"
+
+  async function commit() {
+    if (!draft.trim()) return
+    await onSave(b.id, draft.trim())
+    setDraft("")
+    setOpen(false)
   }
-  try {
-    const ta = document.createElement("textarea")
-    ta.value = text
-    ta.style.position = "fixed"
-    ta.style.opacity = "0"
-    document.body.appendChild(ta)
-    ta.select()
-    const ok = document.execCommand("copy")
-    document.body.removeChild(ta)
-    return ok
-  } catch {
-    return false
+  function cancel() {
+    setDraft("")
+    setOpen(false)
   }
-}
-
-function CredentialCard({ b }: { b: Backend }) {
-  const { setState } = useDashboard()
-  const toast = useToast()
-  // One field per provider: empty `value` means "show the stored key". Typing replaces it.
-  const [value, setValue] = useState("")
-  const [busy, setBusy] = useState(false)
-  const [reveal, setReveal] = useState(false)
-  const [copied, setCopied] = useState(false)
-
-  const { icon: Icon, tile } = META[b.id] ?? FALLBACK
-  const editable = !b.fromEnv
-  // A save is meaningful only when the field holds something new (not the unchanged stored key).
-  const dirty = value.trim() !== "" && value !== b.value
-
-  // Reset the field when the upstream key changes (e.g. after a save), unless it's being edited.
-  useEffect(() => {
-    if (document.activeElement?.id !== `k_${b.id}`) {
-      setValue("")
-      setReveal(false)
-    }
-  }, [b.value, b.id])
-
-  async function onSave() {
-    if (!dirty) return
-    setBusy(true)
-    try {
-      setState(await saveKey(b.id, value.trim()))
-      setValue("")
-      setReveal(false)
-      toast(`saved ${b.label}`)
-    } finally {
-      setBusy(false)
-    }
-  }
-  async function onRemove() {
-    if (!confirm(`Remove ${b.label}? This deletes the stored credential.`)) return
-    setBusy(true)
-    try {
-      setState(await removeKey(b.id))
-      setValue("")
-      setReveal(false)
-      toast(`removed ${b.label}`)
-    } finally {
-      setBusy(false)
-    }
-  }
-  async function onCopy() {
-    if (await copyText(value || b.value)) {
-      setCopied(true)
-      toast("credential copied to clipboard")
-      window.setTimeout(() => setCopied(false), 1500)
-    } else {
-      toast("copy failed — reveal and copy manually")
-    }
-  }
-  // Eye: first reveal pulls the stored plaintext into the field so it's visible & selectable.
-  function toggleReveal() {
-    if (!reveal && b.set && value === "") setValue(b.value)
-    setReveal((r) => !r)
-  }
-
-  const status = b.fromEnv ? "env" : b.set ? "set" : "off"
 
   return (
-    <Card className="flex flex-col gap-4 p-5 transition-all hover:-translate-y-0.5 hover:shadow-[0_1px_2px_rgba(10,40,30,0.05),0_24px_48px_-16px_rgba(10,40,30,0.22)]">
-      <div className="flex items-start gap-3">
-        <span className={cn("grid size-11 shrink-0 place-items-center rounded-[12px]", tile)}>
-          <Icon className="size-5" />
+    <li className="border-b border-border-soft px-6 py-4 transition-colors last:border-0 hover:bg-muted/40">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <span
+          className={cn(
+            "grid size-10 shrink-0 place-items-center rounded-[11px]",
+            b.set || b.fromEnv ? "bg-[#E6F4EA] text-positive" : "bg-secondary text-muted-foreground",
+          )}
+        >
+          <KeyRound className="size-5" />
         </span>
-        <div className="min-w-0 flex-1">
+
+        <div className="min-w-[200px] flex-1">
           <div className="flex items-center gap-2">
-            <span className="truncate text-[15px] font-extrabold tracking-[-0.02em]">{b.label}</span>
+            <span className="text-[13.5px] font-bold tracking-[-0.01em]">{b.label}</span>
             {status === "env" ? (
-              <Badge variant="env">env</Badge>
-            ) : status === "set" ? (
+              <Badge variant="env" className="gap-1">
+                <AlertTriangle className="size-3" /> env
+              </Badge>
+            ) : status === "on" ? (
               <Badge variant="on">set</Badge>
             ) : (
               <Badge variant="off">not set</Badge>
             )}
           </div>
-          <p className="mt-0.5 text-[12.5px] text-muted-foreground">{b.hint}</p>
-        </div>
-      </div>
-
-      {b.fromEnv ? (
-        // Managed by an env var — show the masked value, locked, with no controls.
-        <div className="flex items-center gap-2 rounded-[var(--radius-md)] border border-border-soft bg-muted px-3 py-2.5">
-          <Lock className="size-3.5 shrink-0 text-muted-foreground" />
-          <code className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-foreground">
-            {b.masked || "set via environment"}
-          </code>
-        </div>
-      ) : (
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-w-[200px] flex-1">
-            <Input
-              id={`k_${b.id}`}
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && onSave()}
-              type={reveal ? "text" : "password"}
-              placeholder={b.set ? b.masked : "paste value…"}
-              autoComplete="off"
-              spellCheck={false}
-              className={cn("font-mono", b.set ? "pr-[4.25rem]" : "pr-9")}
-            />
-            <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-0.5">
-              <button
-                type="button"
-                onClick={toggleReveal}
-                aria-label={reveal ? "Hide credential" : "Reveal credential"}
-                title={reveal ? "Hide" : "Reveal"}
-                className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-forest"
-              >
-                {reveal ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-              </button>
-              {b.set && (
-                <button
-                  type="button"
-                  onClick={onCopy}
-                  aria-label="Copy credential to clipboard"
-                  title="Copy to clipboard"
-                  className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-forest"
-                >
-                  {copied ? <Check className="size-4 text-positive" /> : <Copy className="size-4" />}
-                </button>
-              )}
-            </div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[12px] text-muted-foreground">
+            <span>{b.hint}</span>
+            {b.set || b.fromEnv ? (
+              <>
+                <span aria-hidden>·</span>
+                <code className="font-mono text-[11.5px] text-foreground/80">{b.masked}</code>
+              </>
+            ) : null}
           </div>
-          <Button onClick={onSave} disabled={busy || !dirty}>
-            {b.set ? "Replace" : "Save"}
-          </Button>
-          {b.set && (
-            <Button variant="danger" onClick={onRemove} disabled={busy}>
-              Remove
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2">
+          {b.link ? (
+            <a
+              href={b.link}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[12px] font-bold text-mint transition-colors hover:bg-accent"
+            >
+              {b.linkLabel ?? "get key"} <ExternalLink className="size-3.5" />
+            </a>
+          ) : null}
+          {b.fromEnv ? (
+            <span className="text-[11.5px] font-semibold text-muted-foreground">managed by env var</span>
+          ) : open ? null : (
+            <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+              {b.set ? <Pencil className="size-3.5" /> : <Plus className="size-3.5" />}
+              {b.set ? "Update" : "Set key"}
             </Button>
           )}
         </div>
-      )}
+      </div>
 
-      {b.link && !b.set && (
-        <a
-          href={b.link}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex w-fit items-center gap-1 text-[12.5px] font-bold text-positive hover:underline"
-        >
-          {b.linkLabel || "Get a key"} <ExternalLink className="size-3.5" />
-        </a>
-      )}
-    </Card>
+      {open && !b.fromEnv ? (
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Input
+            autoFocus
+            type="password"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void commit()
+              if (e.key === "Escape") cancel()
+            }}
+            placeholder={`Paste ${b.label}`}
+            className="flex-1"
+          />
+          <div className="flex gap-2">
+            <Button onClick={() => void commit()} disabled={busy || !draft.trim()}>
+              <Check className="size-4" />
+              {busy ? "Saving…" : "Save"}
+            </Button>
+            {b.set ? (
+              <Button variant="danger" onClick={() => void onClear(b.id)} disabled={busy}>
+                <Trash2 className="size-4" />
+                Clear
+              </Button>
+            ) : null}
+            <Button variant="ghost" size="icon" onClick={cancel} disabled={busy} aria-label="Cancel">
+              <X className="size-4" />
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </li>
   )
 }
 
 export default function CredentialsPage() {
-  const { state } = useDashboard()
+  const { state, setState } = useDashboard()
+  const toast = useToast()
+  const [busy, setBusy] = useState<Record<string, boolean>>({})
+
+  async function save(id: string, value: string) {
+    setBusy((s) => ({ ...s, [id]: true }))
+    try {
+      setState(await setBackendKey(id, value))
+      toast(`Saved ${id} key`)
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "failed to save key")
+    } finally {
+      setBusy((s) => ({ ...s, [id]: false }))
+    }
+  }
+
+  async function clear(id: string) {
+    setBusy((s) => ({ ...s, [id]: true }))
+    try {
+      setState(await setBackendKey(id, ""))
+      toast(`Cleared ${id} key`)
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "failed to clear key")
+    } finally {
+      setBusy((s) => ({ ...s, [id]: false }))
+    }
+  }
+
   if (!state) {
     return (
-      <div className="grid gap-[18px] xl:grid-cols-2">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <Skeleton key={i} className="h-[200px] rounded-[var(--radius-xl)]" />
-        ))}
+      <div className="flex flex-col gap-[18px]">
+        <Skeleton className="h-[78px] rounded-[var(--radius-xl)]" />
+        <Skeleton className="h-[360px] rounded-[var(--radius-xl)]" />
       </div>
     )
   }
 
-  const total = state.backends.length
-  const live = state.backends.filter((b) => b.set).length
+  const backends = state.backends
+  const configured = backends.filter((b) => b.set || b.fromEnv).length
 
   return (
     <div className="flex flex-col gap-[18px]">
-      <Card className="flex flex-wrap items-center gap-x-4 gap-y-2 px-6 py-4">
-        <span className="grid size-10 place-items-center rounded-[11px] bg-mint-soft text-positive">
-          <KeyRound className="size-5" />
+      <Card className="flex flex-wrap items-center gap-x-4 gap-y-3 px-6 py-4">
+        <span className="grid size-10 place-items-center rounded-[11px] bg-secondary text-forest">
+          <ShieldCheck className="size-5" />
         </span>
         <div className="min-w-[160px]">
-          <div className="text-[14px] font-extrabold tracking-[-0.02em]">Backend credentials</div>
+          <div className="flex items-center gap-2 text-[14px] font-extrabold tracking-[-0.02em]">
+            Backend keys
+            <Badge variant={configured ? "on" : "neutral"}>
+              {configured}/{backends.length} configured
+            </Badge>
+          </div>
           <div className="text-[12.5px] font-medium text-muted-foreground">
-            Keys that unlock the paid &amp; keyed model tiers
+            Upstream provider credentials the proxy uses to reach each backend
           </div>
-        </div>
-        <span className="flex-1" />
-        <div className="text-right">
-          <div className="text-[22px] font-extrabold tracking-[-0.04em] tnum">
-            {live}
-            <span className="text-muted-foreground">/{total}</span>
-          </div>
-          <div className="text-[11.5px] font-semibold text-muted-foreground">configured</div>
         </div>
       </Card>
 
-      <div className="grid gap-[18px] xl:grid-cols-2">
-        {state.backends.map((b) => (
-          <CredentialCard key={b.id} b={b} />
-        ))}
-      </div>
+      <Card className="overflow-hidden">
+        <div className="flex flex-wrap items-center gap-2.5 border-b border-border-soft px-6 py-4">
+          <span className="grid size-8 place-items-center rounded-[9px] bg-secondary text-forest">
+            <KeyRound className="size-4" />
+          </span>
+          <div className="text-[14px] font-extrabold tracking-[-0.02em]">Providers</div>
+          <span className="text-[12px] text-muted-foreground">· env vars override stored keys</span>
+        </div>
+        <ul>
+          {backends.map((b) => (
+            <BackendRow key={b.id} b={b} busy={!!busy[b.id]} onSave={save} onClear={clear} />
+          ))}
+        </ul>
+      </Card>
+
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        Keys are stored in the server database and used only to reach the upstream provider. A matching environment
+        variable (e.g. <code className="font-mono">CLINEPASS_KEY</code>) always takes precedence and locks the field.
+      </p>
     </div>
   )
 }

@@ -9,6 +9,7 @@ import { ToastProvider } from "@/hooks/use-toast"
 import { AuthProvider } from "@/hooks/use-auth"
 import { AuthGate } from "@/components/auth/auth-gate"
 import { Sidebar } from "@/components/layout/sidebar"
+import { SidebarProvider, useSidebar } from "@/components/layout/sidebar-context"
 import { Topbar } from "@/components/layout/topbar"
 
 const MOBILE_LINKS = [
@@ -31,8 +32,8 @@ function MobileNav() {
             key={l.to}
             href={l.to}
             className={cn(
-              "whitespace-nowrap rounded-lg px-3 py-1.5 text-[13px] font-bold transition-colors",
-              isActive ? "bg-forest text-[#eaf4ee]" : "bg-card text-muted-foreground border border-border",
+              "whitespace-nowrap rounded-full px-3.5 py-1.5 text-[13px] font-bold transition-colors",
+              isActive ? "bg-forest text-[#E6EAF0]" : "bg-card text-muted-foreground border border-border",
             )}
           >
             {l.label}
@@ -43,20 +44,38 @@ function MobileNav() {
   )
 }
 
+// The grid lives in its own component so it can read the sidebar's collapse state and switch the
+// first column between the icon rail and the full panel. The transition animates the reflow.
+function DashboardShell({ children }: { children: React.ReactNode }) {
+  const { collapsed } = useSidebar()
+  return (
+    <div
+      className={cn(
+        "grid min-h-screen grid-cols-1 transition-[grid-template-columns] duration-200 ease-out",
+        collapsed ? "md:grid-cols-[68px_1fr]" : "md:grid-cols-[258px_1fr]",
+      )}
+    >
+      <Sidebar />
+      <main className="min-w-0 px-4 pb-16 pt-5 md:px-8 md:pt-7">
+        <div className="mx-auto w-full max-w-[1280px]">
+          <MobileNav />
+          <Topbar />
+          {children}
+        </div>
+      </main>
+    </div>
+  )
+}
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
     <ToastProvider>
       <AuthProvider>
         <AuthGate>
           <DashboardProvider>
-            <div className="grid min-h-screen grid-cols-1 md:grid-cols-[258px_1fr]">
-              <Sidebar />
-              <main className="min-w-0 px-4 pb-16 pt-5 md:px-8 md:pt-7">
-                <MobileNav />
-                <Topbar />
-                {children}
-              </main>
-            </div>
+            <SidebarProvider>
+              <DashboardShell>{children}</DashboardShell>
+            </SidebarProvider>
           </DashboardProvider>
         </AuthGate>
       </AuthProvider>

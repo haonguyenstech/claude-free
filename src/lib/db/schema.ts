@@ -3,7 +3,7 @@
 //  - access_tokens: the API keys that gate the proxy, with usage metadata
 //  - disabled_models: per-model operator off-switch
 //  - request_logs: persistent usage log (powers the Traffic page + per-key counts)
-import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, index } from "drizzle-orm/sqlite-core";
 
 export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),
@@ -49,6 +49,8 @@ export const modelTests = sqliteTable("model_tests", {
   latencyMs: integer("latency_ms"),
   sample: text("sample"),
   error: text("error"),
+  // Measured throughput (output tokens / s) from the last successful test; refreshes the tok/s chip.
+  tps: real("tps"),
 });
 
 // Dashboard login accounts. Credentials live here (email + scrypt password hash); seeded with a
@@ -84,6 +86,9 @@ export const requestLogs = sqliteTable(
     ttftMs: integer("ttft_ms"), // time to first streamed byte (stream requests only)
     inputTokens: integer("input_tokens"),
     outputTokens: integer("output_tokens"),
+    // Real USD cost as reported by the upstream gateway (Cline includes usage.cost); null when the
+    // backend doesn't report one.
+    costUsd: real("cost_usd"),
     stream: integer("stream"),
   },
   (t) => [index("idx_request_logs_ts").on(t.ts), index("idx_request_logs_backend").on(t.backend)],

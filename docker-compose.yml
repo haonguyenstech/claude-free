@@ -18,6 +18,7 @@ services:
       TOKENROUTER_KEY: "${TOKENROUTER_KEY:-}"
       OPENROUTER_KEY: "${OPENROUTER_KEY:-}"
       GEMINI_KEY: "${GEMINI_KEY:-}"
+      CLINEPASS_KEY: "${CLINEPASS_KEY:-}"
     volumes:
       # Persist the SQLite DB + state across redeploys.
       - claude-free-data:/data

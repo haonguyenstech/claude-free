@@ -7,6 +7,9 @@ export const ZEN_PATH = "/zen/v1/chat/completions";
 export const TOKENROUTER_HOST = "api.tokenrouter.com";
 export const TOKENROUTER_PATH = "/v1/chat/completions";
 
+export const CLINEPASS_HOST = "api.cline.bot";
+export const CLINEPASS_PATH = "/api/v1/chat/completions";
+
 export const DEFAULT_MODEL = process.env.ZEN_MODEL || "deepseek-v4-flash-free";
 export const ALLOWED = new Set([
   "deepseek-v4-flash-free",
@@ -16,6 +19,20 @@ export const ALLOWED = new Set([
   "big-pickle",
 ]);
 export const MODEL = DEFAULT_MODEL;
+
+// ClinePass subscription models (api.cline.bot). Full slug is the model id used upstream.
+export const CLINEPASS_MODELS = [
+  "cline-pass/glm-5.2",
+  "cline-pass/kimi-k2.7-code",
+  "cline-pass/kimi-k2.6",
+  "cline-pass/deepseek-v4-pro",
+  "cline-pass/deepseek-v4-flash",
+  "cline-pass/mimo-v2.5",
+  "cline-pass/mimo-v2.5-pro",
+  "cline-pass/minimax-m3",
+  "cline-pass/qwen3.7-max",
+  "cline-pass/qwen3.7-plus",
+];
 
 // Default output cap when a client omits `max_tokens`. Claude Code always sends its own, so this only
 // affects raw/3rd-party clients that leave it unset — kept generous to avoid silent truncation, and
@@ -75,11 +92,9 @@ export const MIMO_MARKER =
   "You are MiMoCode, an interactive CLI tool that helps users with software engineering tasks.";
 
 // Backend credential fields the dashboard can edit. envVar = env var that OVERRIDES keys.json.
+// Only ClinePass is surfaced — OpenCode is keyless, and the other backends are hidden from the UI.
 export const BACKEND_KEYS = [
-  { id: "tokenrouter", label: "TokenRouter key", envVar: "TOKENROUTER_KEY", hint: "powers tokenrouter/ models", link: "https://tokenrouter.com", linkLabel: "get key ↗" },
-  { id: "openrouter", label: "OpenRouter key", envVar: "OPENROUTER_KEY", hint: "powers vendor/model ids via OpenRouter", link: "https://openrouter.ai/keys", linkLabel: "get key ↗" },
-  { id: "gemini", label: "Gemini key", envVar: "GEMINI_KEY", hint: "powers gemini-* models", link: "https://aistudio.google.com/apikey", linkLabel: "get key ↗" },
-  { id: "sakana", label: "Sakana cookie", envVar: "SAKANA_KEY", hint: "sakana-chat + cf_clearance cookie (IP-bound, expires hourly)", link: "https://chat.sakana.ai", linkLabel: "open ↗" },
+  { id: "clinepass", label: "ClinePass key", envVar: "CLINEPASS_KEY", hint: "powers cline-pass/* models", link: "https://app.cline.bot", linkLabel: "get key ↗" },
 ];
 
 // Display metadata for the dashboard model list (name/context/throughput), keyed by bare alias.
@@ -101,4 +116,14 @@ export const MODEL_META: Record<string, { name: string; ctx: string; tps: number
   "google/gemma-4-31b-it:free": { name: "Gemma 4 31B", ctx: "262K", tps: 40 },
   "openai/gpt-oss-20b:free": { name: "gpt-oss 20B", ctx: "131K", tps: 33 },
   "nvidia/nemotron-nano-12b-v2-vl:free": { name: "Nemotron Nano 12B", ctx: "128K", tps: 43 },
+  "cline-pass/glm-5.2": { name: "GLM-5.2", ctx: "", tps: 0 },
+  "cline-pass/kimi-k2.7-code": { name: "Kimi K2.7 Code", ctx: "1M", tps: 0 },
+  "cline-pass/kimi-k2.6": { name: "Kimi K2.6", ctx: "1M", tps: 0 },
+  "cline-pass/deepseek-v4-pro": { name: "DeepSeek V4 Pro", ctx: "", tps: 0 },
+  "cline-pass/deepseek-v4-flash": { name: "DeepSeek V4 Flash", ctx: "", tps: 0 },
+  "cline-pass/mimo-v2.5": { name: "MiMo-V2.5", ctx: "", tps: 0 },
+  "cline-pass/mimo-v2.5-pro": { name: "MiMo-V2.5-Pro", ctx: "", tps: 0 },
+  "cline-pass/minimax-m3": { name: "MiniMax M3", ctx: "", tps: 0 },
+  "cline-pass/qwen3.7-max": { name: "Qwen3.7 Max", ctx: "", tps: 0 },
+  "cline-pass/qwen3.7-plus": { name: "Qwen3.7 Plus", ctx: "", tps: 0 },
 };

@@ -21,12 +21,7 @@ const ALL = "__all__"
 // dashboard. `zen` is the opencode.ai Zen endpoint — shown as "OpenCode" everywhere else.
 const BACKEND_LABELS: Record<string, string> = {
   zen: "OpenCode",
-  mimo: "MiMo",
-  anthropic: "Anthropic",
-  gemini: "Gemini",
-  tokenrouter: "TokenRouter",
-  openrouter: "OpenRouter",
-  cli: "Claude CLI",
+  clinepass: "ClinePass",
 }
 const backendLabel = (id: string) => BACKEND_LABELS[id] ?? id
 
@@ -294,7 +289,7 @@ export default function LogsPage() {
                 {rows.map((r) => {
                   const ok = r.status >= 200 && r.status < 400
                   return (
-                    <tr key={r.id} className="border-t border-border-soft">
+                    <tr key={r.id} className="border-t border-border-soft transition-colors hover:bg-muted/60">
                       <td className="whitespace-nowrap px-6 py-2.5 text-muted-foreground tnum">
                         {fmtAge(Math.floor((now - r.ts) / 1000))} ago
                       </td>
@@ -304,7 +299,7 @@ export default function LogsPage() {
                         <span
                           className={cn(
                             "inline-flex items-center rounded-[6px] px-1.5 py-0.5 text-[11px] font-bold tnum",
-                            ok ? "bg-mint-soft text-positive" : "bg-[#fdecea] text-destructive",
+                            ok ? "bg-[#E6F4EA] text-positive" : "bg-[#FCE8E6] text-destructive",
                           )}
                         >
                           {r.status || "—"}

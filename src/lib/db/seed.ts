@@ -51,7 +51,7 @@ export function seedFromKeysJson(sqlite: Database.Database) {
   const addTok = sqlite.prepare("INSERT OR IGNORE INTO access_tokens(token,created_at) VALUES(?,?)");
   const addDis = sqlite.prepare("INSERT OR IGNORE INTO disabled_models(model_id) VALUES(?)");
   const tx = sqlite.transaction(() => {
-    for (const svc of ["tokenrouter", "openrouter", "gemini", "anthropic"]) {
+    for (const svc of ["tokenrouter", "openrouter", "gemini", "anthropic", "clinepass"]) {
       if (typeof k[svc] === "string" && k[svc]) setS.run(svc, k[svc]);
     }
     if (typeof k.admin_password === "string" && k.admin_password) setS.run("admin_password", k.admin_password);

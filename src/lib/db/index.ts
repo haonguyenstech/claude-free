@@ -3,7 +3,7 @@
 // with zero manual migration. Singleton per process.
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import Database from "better-sqlite3";
-import { eq, lt } from "drizzle-orm";
+import { eq, lt, sql } from "drizzle-orm";
 import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { DB_FILE } from "../env";
 import * as schema from "./schema";
@@ -66,7 +66,9 @@ export function ensureSchema(sqlite: Database.Database) {
   // Additive columns for DBs created before these features shipped. CREATE TABLE IF NOT EXISTS leaves
   // an existing table's columns untouched, so add them explicitly (idempotent — guarded by table_info).
   addColumnIfMissing(sqlite, "request_logs", "ttft_ms", "INTEGER");
+  addColumnIfMissing(sqlite, "request_logs", "cost_usd", "REAL");
   addColumnIfMissing(sqlite, "access_tokens", "expires_at", "INTEGER");
+  addColumnIfMissing(sqlite, "model_tests", "tps", "REAL");
 }
 
 // ALTER TABLE ADD COLUMN, but only if the column isn't already present (ADD COLUMN throws otherwise).
@@ -106,12 +108,13 @@ export function logRequest(entry: {
 // tokens are always known at stream end; input tokens are backfilled too when the upstream reports a
 // real count (Anthropic/CLI passthrough), replacing the rough up-front estimate. Best-effort: no-op
 // on a falsy id, never throws.
-export function updateRequestLogTokens(id: number, outputTokens: number, inputTokens?: number, ttftMs?: number, latencyMs?: number) {
+export function updateRequestLogTokens(id: number, outputTokens: number, inputTokens?: number, ttftMs?: number, latencyMs?: number, costUsd?: number) {
   if (!id) return;
   try {
-    const set: { outputTokens: number; inputTokens?: number; ttftMs?: number; latencyMs?: number } = { outputTokens };
+    const set: { outputTokens: number; inputTokens?: number; ttftMs?: number; latencyMs?: number; costUsd?: number } = { outputTokens };
     if (typeof inputTokens === "number" && inputTokens > 0) set.inputTokens = inputTokens;
     if (typeof ttftMs === "number" && ttftMs >= 0) set.ttftMs = ttftMs;
+    if (typeof costUsd === "number" && costUsd > 0) set.costUsd = costUsd;
     // Replace the up-front (response-start) latency with the true total once the stream has finished.
     if (typeof latencyMs === "number" && latencyMs >= 0) set.latencyMs = latencyMs;
     getDb()
@@ -199,12 +202,13 @@ export type ModelTest = {
   ms: number | null;
   sample: string | null;
   error: string | null;
+  tps: number | null;
 };
 
 // Upsert the latest self-test result for a model (best-effort — never throws).
 export function recordModelTest(
   modelId: string,
-  r: { ok: boolean; ms?: number; status?: number; sample?: string; error?: string },
+  r: { ok: boolean; ms?: number; status?: number; sample?: string; error?: string; tps?: number },
 ) {
   try {
     const row = {
@@ -215,13 +219,23 @@ export function recordModelTest(
       latencyMs: r.ms ?? null,
       sample: r.sample ?? null,
       error: r.error ?? null,
+      tps: r.tps ?? null,
     };
     getDb()
       .insert(modelTests)
       .values(row)
       .onConflictDoUpdate({
         target: modelTests.modelId,
-        set: { ts: row.ts, ok: row.ok, status: row.status, latencyMs: row.latencyMs, sample: row.sample, error: row.error },
+        // A failed/unmeasured test keeps the last measured throughput instead of clearing it.
+        set: {
+          ts: row.ts,
+          ok: row.ok,
+          status: row.status,
+          latencyMs: row.latencyMs,
+          sample: row.sample,
+          error: row.error,
+          tps: sql`coalesce(excluded.tps, ${modelTests.tps})`,
+        },
       })
       .run();
   } catch {}
@@ -240,6 +254,7 @@ export function modelTestMap(): Record<string, ModelTest> {
         ms: r.latencyMs ?? null,
         sample: r.sample ?? null,
         error: r.error ?? null,
+        tps: r.tps ?? null,
       };
     }
     return out;

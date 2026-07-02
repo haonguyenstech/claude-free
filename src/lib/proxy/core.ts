@@ -7,7 +7,7 @@ import { parseModel, routeFor, toOpenAI, toAnthropic } from "./translate";
 import { OPENROUTER_FREE_MODELS } from "./models";
 import { serverKey } from "./config";
 import { mimoJwt } from "./mimo";
-import { callBackend, collectBody, forwardAnthropic, forwardClaudeCli, streamTranslate } from "./upstream";
+import { callBackend, collectBody, extractCostUsd, forwardAnthropic, forwardClaudeCli, streamTranslate, type OnComplete } from "./upstream";
 import { forwardSakana } from "./sakana";
 import { jsonError } from "./errors";
 import { makeSseResponse } from "./sse";
@@ -16,7 +16,7 @@ export async function routeMessages(
   areq: any,
   reqHeaders: Headers,
   signal: AbortSignal,
-  onStreamComplete?: (info: { outputTokens: number; inputTokens?: number }) => void,
+  onStreamComplete?: OnComplete,
 ): Promise<Response> {
   const parsed = parseModel(areq.model);
 
@@ -42,7 +42,7 @@ export async function routeMessages(
   const inEst = Math.ceil(JSON.stringify(areq.messages || "").length / 4);
 
   let authHeader = "Bearer ";
-  if (parsed.backend === "tokenrouter" || parsed.backend === "openrouter" || parsed.backend === "gemini") {
+  if (parsed.backend === "tokenrouter" || parsed.backend === "openrouter" || parsed.backend === "gemini" || parsed.backend === "clinepass") {
     authHeader = "Bearer " + serverKey(parsed.backend);
   } else if (parsed.backend === "mimo") {
     try {
@@ -90,6 +90,21 @@ export async function routeMessages(
     o = JSON.parse(b);
   } catch (e) {
     return jsonError(502, "parse: " + (e as Error).message + " :: " + b.slice(0, 200));
+  }
+  // Non-stream: report real usage (and gateway-billed cost, when present) so the request log gets
+  // actual counts instead of keeping the up-front estimate. Cline wraps the body in {data: ...}.
+  if (onStreamComplete) {
+    try {
+      const u = (o && o.usage) || (o && o.data && o.data.usage) || null;
+      if (u) {
+        onStreamComplete({
+          outputTokens: Number(u.completion_tokens) || 0,
+          inputTokens: Number(u.prompt_tokens) || undefined,
+          lastByteAt: Date.now(),
+          costUsd: extractCostUsd(u) || undefined,
+        });
+      }
+    } catch {}
   }
   return Response.json(toAnthropic(o));
 }

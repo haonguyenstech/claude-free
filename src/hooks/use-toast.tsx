@@ -24,7 +24,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       <div
         role="status"
         className={cn(
-          "pointer-events-none fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-xl bg-forest px-[18px] py-2.5 text-[13px] font-semibold text-[#eaf4ee] shadow-[0_16px_40px_-12px_rgba(10,40,30,0.5)] transition-opacity duration-200",
+          "pointer-events-none fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-xl bg-forest px-[18px] py-2.5 text-[13px] font-semibold text-[#E6EAF0] shadow-[0_16px_40px_-12px_rgba(18,19,23,0.5)] transition-opacity duration-200",
           show ? "opacity-100" : "opacity-0",
         )}
       >

@@ -21,8 +21,21 @@ import { recordRateLimit, type RateLimitInfo } from "../db";
 // (which owns the request start time) turns firstByteAt into a TTFT and lastByteAt into the TRUE total
 // latency (for a stream, the up-front latency only covers time-to-response-start, not the decode).
 // Both omitted for non-streamed responses.
-export type CompleteInfo = { outputTokens: number; inputTokens?: number; firstByteAt?: number; lastByteAt?: number };
+// costUsd is the real USD cost reported by the upstream gateway (Cline sends usage.cost /
+// usage.cost_details); omitted when the backend doesn't report one.
+export type CompleteInfo = { outputTokens: number; inputTokens?: number; firstByteAt?: number; lastByteAt?: number; costUsd?: number };
 export type OnComplete = (info: CompleteInfo) => void;
+
+// Pull the real USD cost out of an OpenAI-compatible usage object. Cline's gateway reports
+// usage.cost, but sets it to 0 for BYOK-routed models where the true spend lives in
+// usage.cost_details.upstream_inference_cost — prefer whichever is non-zero.
+export function extractCostUsd(u: any): number {
+  if (!u) return 0;
+  const direct = Number(u.cost);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  const upstream = Number(u.cost_details && u.cost_details.upstream_inference_cost);
+  return Number.isFinite(upstream) && upstream > 0 ? upstream : 0;
+}
 
 // Parse the `anthropic-ratelimit-*` / `retry-after` response headers into a snapshot for the
 // dashboard. Returns null when none are present (e.g. a non-Anthropic backend) so we don't record an
@@ -306,6 +319,7 @@ export function streamTranslate(
             inputTokens: inputTokens || undefined,
             firstByteAt: firstByteAt || undefined,
             lastByteAt: Date.now(),
+            costUsd: realCost || undefined,
           });
         } catch {}
       }
@@ -322,6 +336,7 @@ export function streamTranslate(
     let buf = "";
     let realOut = 0;
     let realIn = 0;
+    let realCost = 0;
     const start = () => {
       if (started) return;
       started = true;
@@ -411,6 +426,8 @@ export function streamTranslate(
         if (j.usage) {
           if (j.usage.completion_tokens) realOut = j.usage.completion_tokens;
           if (j.usage.prompt_tokens) realIn = j.usage.prompt_tokens;
+          const c = extractCostUsd(j.usage);
+          if (c) realCost = c;
         }
         const ch = (j.choices && j.choices[0]) || {};
         const d = ch.delta || {};

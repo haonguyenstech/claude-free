@@ -14,11 +14,13 @@ import {
   TOKENROUTER_PATH,
   MIMO_HOST,
   MIMO_CHAT_PATH,
+  CLINEPASS_HOST,
+  CLINEPASS_PATH,
   LANG_RULE,
   MIMO_MARKER,
 } from "./models";
 
-export type Backend = "anthropic" | "gemini" | "cli" | "openrouter" | "zen" | "mimo" | "tokenrouter" | "sakana";
+export type Backend = "anthropic" | "gemini" | "cli" | "openrouter" | "zen" | "mimo" | "tokenrouter" | "sakana" | "clinepass";
 export interface Parsed {
   model: string;
   think: boolean;
@@ -39,6 +41,7 @@ export function parseModel(m: string | undefined): Parsed {
   if (base.startsWith("claude")) return { model: base, think, backend: "anthropic" };
   if (base.startsWith("gemini")) return { model: base, think, backend: "gemini" };
   if (base.startsWith("cli/")) return { model: base.slice(4), think, backend: "cli" };
+  if (base.startsWith("cline-pass/")) return { model: base, think, backend: "clinepass" };
   if (base.includes("/")) return { model: base, think, backend: "openrouter" };
   return { model: ALLOWED.has(base) ? base : DEFAULT_MODEL, think, backend: "zen" };
 }
@@ -47,6 +50,7 @@ export function routeFor(backend: Backend): { host: string; path: string; backen
   if (backend === "anthropic") return { host: "api.anthropic.com", path: "/v1/messages", backend };
   if (backend === "tokenrouter") return { host: TOKENROUTER_HOST, path: TOKENROUTER_PATH, backend };
   if (backend === "openrouter") return { host: "openrouter.ai", path: "/api/v1/chat/completions", backend };
+  if (backend === "clinepass") return { host: CLINEPASS_HOST, path: CLINEPASS_PATH, backend };
   if (backend === "mimo") return { host: MIMO_HOST, path: MIMO_CHAT_PATH, backend };
   if (backend === "gemini") return { host: "generativelanguage.googleapis.com", path: "/v1beta/openai/chat/completions", backend };
   return { host: ZEN_HOST, path: ZEN_PATH, backend };
@@ -118,6 +122,9 @@ export function toOpenAI(a: any): any {
   if (backend === "zen" && !think) out.thinking = { type: "disabled" };
   // Gemini 2.5 "thinking" silently eats the whole max_tokens budget; disable unless explicitly asked.
   if (backend === "gemini" && !think) out.reasoning_effort = "none";
+  // Cline's gateway leaves model reasoning ON by default; MiMo burns the whole max_tokens budget
+  // thinking and the gateway then 500s with "empty response content". OpenRouter-style disable.
+  if (backend === "clinepass" && !think) out.reasoning = { enabled: false };
   if (a.temperature != null) out.temperature = a.temperature;
   if (Array.isArray(a.tools) && a.tools.length) {
     out.tools = a.tools
@@ -140,6 +147,9 @@ export function mapStop(fr: string | undefined): string {
 }
 
 export function toAnthropic(o: any): any {
+  // Cline wraps non-stream completions in a {data: {...}, success: true} envelope (SSE chunks are
+  // NOT wrapped); unwrap so the choices/usage extraction below sees the OpenAI shape.
+  if (o && !o.choices && o.data && o.data.choices) o = o.data;
   const choice = (o.choices && o.choices[0]) || {};
   const content: any[] = [];
   const msg = choice.message || {};

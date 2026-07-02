@@ -1,6 +1,6 @@
 {
   "name": "claude-free",
-  "version": "2.1.0",
+  "version": "2.6.2",
   "private": true,
   "description": "claude-free — run Claude Code on free AI models. Single Next.js app: BE (Anthropic Messages API proxy + admin API) + FE (operator dashboard).",
   "scripts": {

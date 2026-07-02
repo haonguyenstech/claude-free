@@ -26,14 +26,14 @@ import {
 
 type Result =
   | { status: "testing" }
-  | { status: "ok"; ms: number; sample: string; ts?: number }
+  | { status: "ok"; ms: number; sample: string; ts?: number; tps?: number }
   | { status: "fail"; error: string; ms?: number; ts?: number }
 
 // Persisted last-test (from the DB, via dashboard state) -> the same Result shape the UI renders.
 function toResult(t: Model["lastTest"]): Result | undefined {
   if (!t) return undefined
   return t.ok
-    ? { status: "ok", ms: t.ms ?? 0, sample: t.sample ?? "", ts: t.ts }
+    ? { status: "ok", ms: t.ms ?? 0, sample: t.sample ?? "", ts: t.ts, tps: t.tps ?? undefined }
     : { status: "fail", error: t.error ?? "failed", ms: t.ms ?? undefined, ts: t.ts }
 }
 
@@ -44,13 +44,11 @@ function modelStatus(t: Model["lastTest"]): "healthy" | "down" | "unknown" {
   return t.ok ? "healthy" : "down"
 }
 
-const GROUPS: { tier: string; label: string; variant: "on" | "env"; sub: string }[] = [
-  { tier: "opencode", label: "OPENCODE", variant: "on", sub: "opencode.ai Zen · free, no key" },
-  { tier: "mimo", label: "MIMO", variant: "on", sub: "Xiaomi · free, no key" },
-  { tier: "anthropic", label: "ANTHROPIC", variant: "env", sub: "Claude models · via the local Claude CLI" },
-  { tier: "gemini", label: "GEMINI", variant: "env", sub: "Google AI Studio · Gemini key" },
-  { tier: "tokenrouter", label: "TOKENROUTER", variant: "env", sub: "API key" },
-  { tier: "openrouter", label: "OPENROUTER", variant: "env", sub: "free models · OpenRouter key · auto-fallback on 429" },
+// Only the opencode (free, no key) and clinepass (subscription) tiers are shown on the dashboard; the
+// other backends remain routed by state.ts/models.ts but are hidden from the UI to keep this page focused.
+const GROUPS: { tier: string; title: string; free: boolean; sub: string }[] = [
+  { tier: "opencode", title: "OpenCode", free: true, sub: "opencode.ai Zen · free, no key" },
+  { tier: "clinepass", title: "ClinePass", free: false, sub: "api.cline.bot · subscription" },
 ]
 
 export default function ModelsPage() {
@@ -82,7 +80,7 @@ export default function ModelsPage() {
       setResults((r) => ({
         ...r,
         [id]: res.ok
-          ? { status: "ok", ms: res.ms ?? 0, sample: res.sample ?? "", ts }
+          ? { status: "ok", ms: res.ms ?? 0, sample: res.sample ?? "", ts, tps: res.tps }
           : { status: "fail", error: res.error ?? "failed", ms: res.ms, ts },
       }))
     } catch (e) {
@@ -113,10 +111,10 @@ export default function ModelsPage() {
 
   if (!state) {
     return (
-      <div className="flex flex-col gap-3">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <Skeleton key={i} className="h-16 rounded-2xl" />
-        ))}
+      <div className="flex flex-col gap-[18px]">
+        <Skeleton className="h-[68px] rounded-[var(--radius-xl)]" />
+        <Skeleton className="h-[64px] rounded-[var(--radius-xl)]" />
+        <Skeleton className="h-[320px] rounded-[var(--radius-xl)]" />
       </div>
     )
   }
@@ -173,71 +171,87 @@ export default function ModelsPage() {
         return (
           <Card key={g.tier} className="overflow-hidden">
             <div className="flex flex-wrap items-center gap-3 border-b border-border-soft px-6 py-4">
-              <Badge variant={g.variant}>{g.label}</Badge>
               <span
                 className={cn(
-                  "inline-flex items-center gap-1 rounded-[6px] px-2 py-0.5 text-[10.5px] font-bold",
-                  g.variant === "on" ? "bg-mint-soft text-positive" : "bg-secondary text-forest",
+                  "grid size-9 shrink-0 place-items-center rounded-[10px]",
+                  g.free ? "bg-[#E6F4EA] text-positive" : "bg-secondary text-forest",
                 )}
               >
-                {g.variant === "on" ? <Zap className="size-3" /> : <KeyRound className="size-3" />}
-                {g.variant === "on" ? "free" : "keyed"}
+                {g.free ? <Zap className="size-4" /> : <KeyRound className="size-4" />}
               </span>
-              <span className="text-[12.5px] text-muted-foreground">{g.sub}</span>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-[14px] font-extrabold tracking-[-0.02em]">{g.title}</span>
+                  <Badge variant={g.free ? "on" : "neutral"}>{g.free ? "free" : "subscription"}</Badge>
+                </div>
+                <div className="truncate text-[12px] text-muted-foreground">{g.sub}</div>
+              </div>
               <span className="flex-1" />
               <span className="text-[12px] font-semibold text-muted-foreground tnum">
                 {groupEnabled}/{models.length} on
               </span>
-              <Button variant="ghost" size="xs" onClick={() => runMany(models, g.tier)}>
+              <Button variant="outline" size="sm" onClick={() => runMany(models, g.tier)}>
+                <Play className="size-3.5" />
                 Test all
               </Button>
             </div>
 
-            <ul className="px-6">
-              {models.map((m) => (
-                <li
-                  key={m.id}
-                  className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border-soft py-3 last:border-0"
-                >
-                  <Switch
-                    checked={m.enabled}
-                    disabled={toggling[m.id]}
-                    onCheckedChange={() => toggle(m)}
-                    aria-label={`${m.enabled ? "Disable" : "Enable"} ${m.name}`}
-                  />
-                  <div className={cn("min-w-[160px]", !m.enabled && "opacity-50")}>
-                    <div className="flex items-center gap-2">
-                      <StatusDot t={m.lastTest} />
-                      <span className="font-bold tracking-[-0.01em]">{m.name}</span>
+            <ul>
+              {models.map((m) => {
+                // tok/s: a fresh in-session measurement wins over the (test-backed or static) server value.
+                const r = shown(m)
+                const tps = (r?.status === "ok" && r.tps) || m.tps
+                return (
+                  <li
+                    key={m.id}
+                    className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border-soft px-6 py-3 transition-colors last:border-0 hover:bg-muted/50"
+                  >
+                    <Switch
+                      checked={m.enabled}
+                      disabled={toggling[m.id]}
+                      onCheckedChange={() => toggle(m)}
+                      aria-label={`${m.enabled ? "Disable" : "Enable"} ${m.name}`}
+                    />
+                    <div className={cn("min-w-[160px]", !m.enabled && "opacity-45")}>
+                      <div className="flex items-center gap-2">
+                        <StatusDot t={m.lastTest} />
+                        <span className="text-[13.5px] font-bold tracking-[-0.01em]">{m.name}</span>
+                        {!m.enabled ? (
+                          <span className="rounded-full bg-[#FCE8E6] px-1.5 py-0.5 text-[10px] font-bold text-destructive">
+                            off
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="font-mono text-[11px] text-muted-foreground">{m.id}</div>
                     </div>
-                    <div className="font-mono text-[11px] text-muted-foreground">{m.id}</div>
-                  </div>
-                  <div className={cn("flex gap-1.5", !m.enabled && "opacity-50")}>
-                    {m.ctx ? <Chip>{m.ctx}</Chip> : null}
-                    {m.tps ? <Chip fast={m.tps >= 50}>{m.tps} tok/s</Chip> : <Chip>payg</Chip>}
-                  </div>
-                  {!m.enabled ? (
-                    <span className="rounded-full bg-[#fdecea] px-2 py-0.5 text-[11px] font-bold text-destructive">
-                      off
-                    </span>
-                  ) : null}
-                  <div className="ml-auto min-w-[150px] text-right text-[12px]">
-                    <ResultView r={shown(m)} />
-                  </div>
-                  <Button variant="ghost" size="xs" disabled={!m.enabled} onClick={() => runOne(m.id)}>
-                    Test
-                  </Button>
-                </li>
-              ))}
+                    <div className={cn("flex gap-1.5", !m.enabled && "opacity-45")}>
+                      {m.ctx ? <Chip>{m.ctx}</Chip> : null}
+                      {tps ? <Chip fast={tps >= 50}>{tps} tok/s</Chip> : <Chip>payg</Chip>}
+                    </div>
+                    <div className="ml-auto min-w-[150px] text-right text-[12px]">
+                      <ResultView r={r} />
+                    </div>
+                    <Button variant="ghost" size="xs" disabled={!m.enabled} onClick={() => runOne(m.id)}>
+                      Test
+                    </Button>
+                  </li>
+                )
+              })}
             </ul>
           </Card>
         )
       })}
 
       {visible.length === 0 ? (
-        <Card className="px-6 py-10 text-center text-[13px] text-muted-foreground">
-          No models match <span className="font-mono text-foreground">{query}</span>
-          {enabledOnly ? " among enabled models" : ""}.
+        <Card className="flex flex-col items-center gap-3 px-6 py-14 text-center">
+          <span className="grid size-12 place-items-center rounded-[14px] bg-secondary text-muted-foreground">
+            <Search className="size-6" />
+          </span>
+          <div className="text-[15px] font-extrabold tracking-[-0.02em]">No models match</div>
+          <p className="max-w-sm text-[13px] text-muted-foreground">
+            Nothing matches <span className="font-mono text-foreground">{query || "your filter"}</span>
+            {enabledOnly ? " among enabled models" : ""}. Clear the filter to see every model.
+          </p>
         </Card>
       ) : null}
     </div>
@@ -254,8 +268,8 @@ function StatPill({
   children: React.ReactNode
 }) {
   const cls = {
-    green: "bg-mint-soft text-positive",
-    red: "bg-[#fdecea] text-destructive",
+    green: "bg-[#E6F4EA] text-positive",
+    red: "bg-[#FCE8E6] text-destructive",
     dark: "bg-secondary text-forest",
   }[tone]
   return (
@@ -272,7 +286,7 @@ function Chip({ children, fast }: { children: React.ReactNode; fast?: boolean })
       className={cn(
         "rounded-[7px] border px-2 py-1 font-mono text-[11px]",
         fast
-          ? "border-[rgba(11,169,104,0.25)] bg-mint-soft text-positive"
+          ? "border-[rgba(24,128,56,0.25)] bg-[#E6F4EA] text-positive"
           : "border-border bg-muted text-muted-foreground",
       )}
     >
@@ -290,7 +304,7 @@ function ResultView({ r }: { r?: Result }) {
   if (!r) return <span className="text-muted-foreground">—</span>
   if (r.status === "testing")
     return (
-      <span className="inline-flex items-center gap-1.5 text-forest">
+      <span className="inline-flex items-center gap-1.5 font-semibold text-mint">
         <Loader2 className="size-3.5 animate-spin" /> testing…
       </span>
     )
@@ -398,8 +412,10 @@ function HealthCard({ onRefresh }: { onRefresh: () => Promise<void> }) {
 
   return (
     <Card className="flex flex-wrap items-center gap-x-4 gap-y-3 px-6 py-4">
-      <div className="flex items-center gap-2">
-        <Activity className="size-4 text-forest" />
+      <div className="flex items-center gap-2.5">
+        <span className="grid size-8 place-items-center rounded-[9px] bg-accent text-mint">
+          <Activity className="size-4" />
+        </span>
         <span className="text-[13px] font-bold tracking-[-0.01em]">Automatic health checks</span>
       </div>
 
@@ -415,7 +431,7 @@ function HealthCard({ onRefresh }: { onRefresh: () => Promise<void> }) {
             {!health.enabled ? (
               <span>off — models are only checked when you test them manually</span>
             ) : runningNow || health.running ? (
-              <span className="inline-flex items-center gap-1.5 text-forest">
+              <span className="inline-flex items-center gap-1.5 font-semibold text-mint">
                 <Loader2 className="size-3.5 animate-spin" /> running…
               </span>
             ) : (

@@ -8,7 +8,7 @@ import { useDashboard } from "@/hooks/use-dashboard"
 const TITLES: Record<string, { title: string; sub: string }> = {
   "/dashboard/overview": { title: "Overview", sub: "Live health of your free-model gateway" },
   "/dashboard/models": { title: "Models served", sub: "Every model the proxy can route — test them live" },
-  "/dashboard/credentials": { title: "Backend credentials", sub: "Keys that power the paid & keyed tiers" },
+  "/dashboard/credentials": { title: "Credentials", sub: "Backend keys the proxy uses upstream — env vars take precedence" },
   "/dashboard/tokens": { title: "API keys", sub: "Who is allowed to use this proxy" },
   "/dashboard/traffic": { title: "Traffic", sub: "Requests routed, by backend" },
   "/dashboard/logs": { title: "Logs", sub: "Every request routed through the proxy" },
@@ -22,9 +22,9 @@ export function Topbar() {
   const paused = reachable && state!.server.enabled === false
   const status: "online" | "paused" | "offline" = !reachable ? "offline" : paused ? "paused" : "online"
   const cls = {
-    online: { box: "bg-mint-soft text-positive", dot: "bg-mint shadow-[0_0_0_3px_rgba(24,224,140,0.3)]" },
-    paused: { box: "bg-[#fff4e2] text-amber", dot: "bg-amber" },
-    offline: { box: "bg-[#fdecea] text-destructive", dot: "bg-destructive" },
+    online: { box: "bg-[#E6F4EA] text-positive", dot: "bg-positive shadow-[0_0_0_3px_rgba(24,128,56,0.25)]" },
+    paused: { box: "bg-[#FEF7E0] text-amber", dot: "bg-amber" },
+    offline: { box: "bg-[#FCE8E6] text-destructive", dot: "bg-destructive" },
   }[status]
 
   return (

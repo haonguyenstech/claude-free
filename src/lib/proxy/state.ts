@@ -1,17 +1,7 @@
 // Dashboard state builder + model self-test. Ports claude-proxy.js:847-852, 889-953.
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import {
-  ALLOWED,
-  ANTHROPIC_MODELS,
-  GEMINI_MODELS,
-  OPENROUTER_FREE_MODELS,
-  CLI_MODELS,
-  TOKENROUTER_MODELS,
-  SAKANA_MODELS,
-  MODEL_META,
-  BACKEND_KEYS,
-} from "./models";
+import { ALLOWED, CLINEPASS_MODELS, MODEL_META, BACKEND_KEYS } from "./models";
 import { sql } from "drizzle-orm";
 import { getSetting, serverEnabled, disabledModelSet, adminPassword } from "./config";
 import { allowedTokens } from "./auth";
@@ -24,7 +14,7 @@ import { routeMessages } from "./core";
 // is many files, and claude-free's stale-detection only applied to the legacy local-proxy mode).
 export const SRC_HASH = "nextjs";
 
-export type TestResult = { ok: boolean; ms?: number; status?: number; sample?: string; error?: string };
+export type TestResult = { ok: boolean; ms?: number; status?: number; sample?: string; error?: string; tps?: number };
 
 export function maskSecret(s: unknown): string {
   if (!s) return "";
@@ -58,7 +48,9 @@ function gateTokens() {
 
 function modelEntry(id: string, alias: string, off: Set<string>, tests: Record<string, ModelTest>) {
   const m = MODEL_META[alias] || { name: alias, ctx: "", tps: 0 };
-  return { id, name: m.name, ctx: m.ctx, tps: m.tps, enabled: !off.has(id), lastTest: tests[id] ?? null };
+  // Measured throughput from the last self-test supersedes the static MODEL_META estimate.
+  const t = tests[id] ?? null;
+  return { id, name: m.name, ctx: m.ctx, tps: t?.tps ?? m.tps, enabled: !off.has(id), lastTest: t };
 }
 
 // Aggregate the persistent request log for the dashboard's Traffic + counters.
@@ -117,15 +109,11 @@ export function buildState() {
     },
     gate: { count: tokens.length, tokens },
     backends,
+    // Only the two surfaced tiers are shipped to the dashboard. The other backends still route
+    // server-side (parseModel/core.ts) but are intentionally hidden from the operator UI.
     models: {
       opencode: [...new Set(["big-pickle", ...ALLOWED])].map((id) => modelEntry(id, id, off, tests)),
-      mimo: ["mimo-auto"].map((id) => modelEntry(id, id, off, tests)),
-      anthropic: ANTHROPIC_MODELS.map((id) => modelEntry(id, id, off, tests)),
-      tokenrouter: Object.keys(TOKENROUTER_MODELS).map((a) => modelEntry("tokenrouter/" + a, a, off, tests)),
-      gemini: GEMINI_MODELS.map((id) => modelEntry(id, id, off, tests)),
-      sakana: SAKANA_MODELS.map((id) => modelEntry("sakana/" + id, "sakana/" + id, off, tests)),
-      openrouter: OPENROUTER_FREE_MODELS.map((id) => modelEntry(id, id, off, tests)),
-      cli: CLI_MODELS.map((id) => modelEntry("cli/" + id, id, off, tests)),
+      clinepass: CLINEPASS_MODELS.map((id) => modelEntry(id, id, off, tests)),
     },
     stats: dbStats(),
   };
@@ -138,7 +126,16 @@ export function buildState() {
 export async function testModel(model: string): Promise<TestResult> {
   const toks = allowedTokens();
   if (!toks.length) return { ok: false, error: "no API key configured on server" };
-  const areq = { model, max_tokens: 16, messages: [{ role: "user", content: "ping" }], stream: false };
+  // 128, not 16: some backends (Cline's Kimi/MiMo) spend tokens on reasoning even when asked not
+  // to, and a budget that leaves no room for visible text makes the test fail or sample "".
+  // The prompt asks for a short burst (not just "pong") so the run emits enough output tokens to
+  // measure throughput — a 2-token reply is all TTFT and would report ~1 tok/s for every model.
+  const areq = {
+    model,
+    max_tokens: 128,
+    messages: [{ role: "user", content: "Reply with the word pong, then the numbers 1 to 30 separated by spaces." }],
+    stream: false,
+  };
   const t0 = Date.now();
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), 40000);
@@ -159,7 +156,12 @@ export async function testModel(model: string): Promise<TestResult> {
         .replace(/\s+/g, " ")
         .trim()
         .slice(0, 80);
-      return { ok: true, ms, status: 200, sample };
+      // Rough measured throughput: output tokens over total wall time (includes TTFT, so it
+      // understates a bit). Only trusted when the reply is long enough that TTFT doesn't dominate;
+      // otherwise leave tps undefined and the last/static value stands.
+      const outTok = Number(j.usage?.output_tokens);
+      const tps = outTok >= 16 && ms > 0 ? Math.max(1, Math.round((outTok / ms) * 1000)) : undefined;
+      return { ok: true, ms, status: 200, sample, tps };
     }
     const err = (j.error && j.error.message) || j.message || "HTTP " + res.status;
     return { ok: false, ms, status: res.status, error: String(err).slice(0, 160) };

@@ -10,6 +10,7 @@ export type ModelTest = {
   ms: number | null
   sample: string | null
   error: string | null
+  tps: number | null
 }
 
 export type Model = {
@@ -73,6 +74,7 @@ export type TestResult = {
   status?: number
   sample?: string
   error?: string
+  tps?: number
 }
 
 export type RecentRequest = {
@@ -84,12 +86,14 @@ export type RecentRequest = {
   ttftMs: number
   inputTokens: number
   outputTokens: number
+  costUsd: number | null
   stream: boolean
 }
 
 export type ModelPerf = {
   model: string
   count: number
+  costUsd: number
   avgTtftMs: number | null
   tokPerSec: number | null
 }
@@ -101,6 +105,7 @@ export type TokenUsage = {
   errors: number
   inputTokens: number
   outputTokens: number
+  costUsd: number
   lastAt: number | null
 }
 
@@ -124,12 +129,13 @@ export type TrafficData = {
     avgLatencyMs: number
     inputTokens: number
     outputTokens: number
+    costUsd: number
   }
   byBackend: { backend: string; count: number; errors: number }[]
   byModel: ModelPerf[]
   byToken: TokenUsage[]
   series: { t: number; count: number; errors: number }[]
-  daily: { t: number; count: number; inputTokens: number; outputTokens: number }[]
+  daily: { t: number; count: number; inputTokens: number; outputTokens: number; costUsd: number }[]
   rateLimits: RateLimit[]
   recent: RecentRequest[]
   lastAt: number | null
@@ -187,18 +193,6 @@ export const authLogin = async (email: string, password: string): Promise<AuthUs
 
 export const authLogout = () => fetch("/dashboard/api/auth/logout", { method: "POST" })
 
-export const saveKey = (id: string, value: string) =>
-  api<DashboardState>("/dashboard/api/keys", {
-    method: "POST",
-    body: JSON.stringify({ [id]: value }),
-  })
-
-export const removeKey = (id: string) =>
-  api<DashboardState>("/dashboard/api/keys", {
-    method: "POST",
-    body: JSON.stringify({ remove: id }),
-  })
-
 export const addToken = (token: string) =>
   api<DashboardState>("/dashboard/api/tokens", {
     method: "POST",
@@ -248,6 +242,12 @@ export async function downloadLogsCsv(params: URLSearchParams): Promise<void> {
   a.remove()
   URL.revokeObjectURL(url)
 }
+
+export const setBackendKey = (id: string, value: string) =>
+  api<DashboardState>("/dashboard/api/settings", {
+    method: "POST",
+    body: JSON.stringify({ target: "backend", id, value }),
+  })
 
 export const setServerEnabled = (enabled: boolean) =>
   api<DashboardState>("/dashboard/api/settings", {

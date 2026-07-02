@@ -13,6 +13,7 @@ import {
   Timer,
   KeyRound,
   CalendarRange,
+  CircleDollarSign,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 
@@ -27,12 +28,7 @@ const POLL_MS = 5000
 // dashboard uses. `zen` is the opencode.ai Zen endpoint — shown as "OpenCode" everywhere else.
 const BACKEND_LABELS: Record<string, string> = {
   zen: "OpenCode",
-  mimo: "MiMo",
-  anthropic: "Anthropic",
-  gemini: "Gemini",
-  tokenrouter: "TokenRouter",
-  openrouter: "OpenRouter",
-  cli: "Claude CLI",
+  clinepass: "ClinePass",
 }
 const backendLabel = (id: string) => BACKEND_LABELS[id] ?? id
 
@@ -71,6 +67,16 @@ function fmtNum(n: number): string {
   return `${n}`
 }
 
+// Real gateway-billed USD. Sub-cent values keep 4 decimals so payg pennies stay visible;
+// zero/unreported shows as an em dash (free models never report a cost).
+function fmtCost(usd: number | null | undefined): string {
+  if (!usd) return "—"
+  if (usd < 0.0001) return "<$0.0001"
+  if (usd < 0.01) return `$${usd.toFixed(4)}`
+  if (usd < 1) return `$${usd.toFixed(3)}`
+  return `$${usd.toFixed(2)}`
+}
+
 function fmtLatency(ms: number): string {
   if (!ms) return "—"
   if (ms >= 1000) return `${(ms / 1000).toFixed(ms >= 10_000 ? 0 : 1)}s`
@@ -93,8 +99,8 @@ export default function TrafficPage() {
   if (!data) {
     return (
       <div className="flex flex-col gap-[18px]">
-        <div className="grid grid-cols-2 gap-[18px] xl:grid-cols-5">
-          {Array.from({ length: 5 }).map((_, i) => (
+        <div className="grid grid-cols-2 gap-[18px] xl:grid-cols-6">
+          {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-[104px] rounded-[var(--radius-md)]" />
           ))}
         </div>
@@ -110,7 +116,7 @@ export default function TrafficPage() {
   if (empty) {
     return (
       <Card className="flex flex-col items-center gap-3 px-6 py-16 text-center">
-        <span className="grid size-12 place-items-center rounded-[14px] bg-mint-soft text-positive">
+        <span className="grid size-12 place-items-center rounded-[14px] bg-[#E6F4EA] text-positive">
           <Activity className="size-6" />
         </span>
         <div className="text-[15px] font-extrabold tracking-[-0.02em]">No traffic yet</div>
@@ -133,17 +139,18 @@ export default function TrafficPage() {
     { label: "Avg latency", value: fmtLatency(totals.avgLatencyMs), icon: Gauge, tone: "dark" },
     { label: "Tokens in", value: fmtNum(totals.inputTokens), icon: ArrowDownToLine, tone: "dark" },
     { label: "Tokens out", value: fmtNum(totals.outputTokens), icon: ArrowUpFromLine, tone: "green" },
+    { label: "Cost", value: fmtCost(totals.costUsd), icon: CircleDollarSign, tone: totals.costUsd ? "amber" : "dark", sub: "gateway-billed (payg)" },
   ]
 
   return (
     <div className="flex flex-col gap-[18px]">
-      <section className="grid grid-cols-2 gap-[18px] sm:grid-cols-3 xl:grid-cols-5">
+      <section className="grid grid-cols-2 gap-[18px] sm:grid-cols-3 xl:grid-cols-6">
         {stats.map((s) => {
           const Icon = s.icon
           return (
             <Card
               key={s.label}
-              className="rounded-[var(--radius-md)] px-[18px] pb-4 pt-[18px] transition-all hover:-translate-y-0.5 hover:shadow-[0_1px_2px_rgba(10,40,30,0.05),0_24px_48px_-16px_rgba(10,40,30,0.22)]"
+              className="rounded-[var(--radius-md)] px-[18px] pb-4 pt-[18px] transition-all hover:-translate-y-0.5 hover:shadow-[0_2px_8px_rgba(18,19,23,0.05),0_16px_32px_-18px_rgba(18,19,23,0.16)]"
             >
               <div className="flex items-center gap-2.5 text-[12.5px] font-semibold text-muted-foreground">
                 <span className={cn("grid size-8 place-items-center rounded-[9px]", toneCls[s.tone])}>
@@ -182,9 +189,9 @@ export default function TrafficPage() {
 
 type Tone = "green" | "red" | "amber" | "dark"
 const toneCls: Record<Tone, string> = {
-  green: "bg-mint-soft text-positive",
-  red: "bg-[#fdecea] text-destructive",
-  amber: "bg-[#fff4e2] text-amber",
+  green: "bg-[#E6F4EA] text-positive",
+  red: "bg-[#FCE8E6] text-destructive",
+  amber: "bg-[#FEF7E0] text-amber",
   dark: "bg-secondary text-forest",
 }
 
@@ -223,9 +230,9 @@ function ActivityChart({ series }: { series: TrafficData["series"] }) {
                   style={{ height: `${(1 - errFrac) * 100}%` }}
                 />
               </div>
-              <div className="pointer-events-none absolute -top-9 left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-forest px-2 py-1 text-[11px] font-semibold text-[#eaf4ee] group-hover:block">
+              <div className="pointer-events-none absolute -top-9 left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-forest px-2 py-1 text-[11px] font-semibold text-[#E6EAF0] group-hover:block">
                 {s.count} req{s.errors ? ` · ${s.errors} err` : ""}
-                <span className="block text-center text-[10px] font-normal text-[#9fc5b4]">{hourLabel(s.t)}</span>
+                <span className="block text-center text-[10px] font-normal text-[#AEB4C0]">{hourLabel(s.t)}</span>
               </div>
               <span className="sr-only">
                 {hourLabel(s.t)}: {ok} ok, {s.errors} errors
@@ -322,11 +329,12 @@ function ModelPerfCard({ rows }: { rows: TrafficData["byModel"] }) {
               <th className="pb-2 text-right font-bold">Req</th>
               <th className="pb-2 text-right font-bold">TTFT</th>
               <th className="pb-2 text-right font-bold">tok/s</th>
+              <th className="pb-2 text-right font-bold">Cost</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((m) => (
-              <tr key={m.model} className="border-t border-border-soft">
+              <tr key={m.model} className="border-t border-border-soft transition-colors hover:bg-muted/60">
                 <td className="truncate py-2 font-mono text-[11.5px]" title={m.model}>
                   {m.model}
                 </td>
@@ -337,6 +345,7 @@ function ModelPerfCard({ rows }: { rows: TrafficData["byModel"] }) {
                 <td className="py-2 text-right font-bold text-positive tnum">
                   {m.tokPerSec != null ? m.tokPerSec.toFixed(1) : "—"}
                 </td>
+                <td className="py-2 text-right text-muted-foreground tnum">{fmtCost(m.costUsd)}</td>
               </tr>
             ))}
           </tbody>
@@ -346,19 +355,19 @@ function ModelPerfCard({ rows }: { rows: TrafficData["byModel"] }) {
   )
 }
 
-// Live rate-limit snapshots parsed from the Anthropic `anthropic-ratelimit-*` / `retry-after` headers.
-// Surfaces remaining quota + reset countdown for the CLI/Anthropic models — the 429-prone ones.
+// Live rate-limit snapshots parsed from upstream `*-ratelimit-*` / `retry-after` headers.
+// Surfaces remaining quota + reset countdown for models whose backend reports it.
 function RateLimitCard({ rows }: { rows: TrafficData["rateLimits"] }) {
   return (
     <Card className="px-6 py-5">
       <div className="mb-4 flex items-center gap-2.5">
-        <span className="grid size-8 place-items-center rounded-[9px] bg-[#fff4e2] text-amber">
+        <span className="grid size-8 place-items-center rounded-[9px] bg-[#FEF7E0] text-amber">
           <Timer className="size-4" />
         </span>
         <div>
           <div className="text-[14px] font-extrabold tracking-[-0.02em]">Rate limits</div>
           <div className="text-[11.5px] font-medium text-muted-foreground">
-            Latest quota reported by Anthropic per model
+            Latest quota reported by the provider per model
           </div>
         </div>
       </div>
@@ -377,11 +386,11 @@ function RateLimitCard({ rows }: { rows: TrafficData["rateLimits"] }) {
             {rows.map((r) => {
               const limited = r.status === 429 || (r.requestsRemaining === 0)
               return (
-                <tr key={r.modelId} className="border-t border-border-soft">
+                <tr key={r.modelId} className="border-t border-border-soft transition-colors hover:bg-muted/60">
                   <td className="truncate py-2 font-mono text-[11.5px]" title={r.modelId}>
                     {r.modelId}
                     {limited ? (
-                      <span className="ml-1.5 rounded-[6px] bg-[#fdecea] px-1.5 py-0.5 text-[10px] font-bold text-destructive">
+                      <span className="ml-1.5 rounded-[6px] bg-[#FCE8E6] px-1.5 py-0.5 text-[10px] font-bold text-destructive">
                         429
                       </span>
                     ) : null}
@@ -439,9 +448,9 @@ function DailyRollup({ daily }: { daily: TrafficData["daily"] }) {
                 className="w-full rounded-[3px] bg-gradient-to-t from-mint-strong to-mint transition-colors"
                 style={{ height: `${Math.max(h, tok ? 4 : 2)}%` }}
               />
-              <div className="pointer-events-none absolute -top-10 left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-forest px-2 py-1 text-[11px] font-semibold text-[#eaf4ee] group-hover:block">
+              <div className="pointer-events-none absolute -top-10 left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-forest px-2 py-1 text-[11px] font-semibold text-[#E6EAF0] group-hover:block">
                 {fmtNum(tok)} tok · {d.count} req
-                <span className="block text-center text-[10px] font-normal text-[#9fc5b4]">{dayLabel(d.t)}</span>
+                <span className="block text-center text-[10px] font-normal text-[#AEB4C0]">{dayLabel(d.t)}</span>
               </div>
             </div>
           )
@@ -482,12 +491,13 @@ function TokenUsageCard({ rows }: { rows: TrafficData["byToken"] }) {
               <th className="py-2.5 text-right font-bold">Errors</th>
               <th className="py-2.5 text-right font-bold">In</th>
               <th className="py-2.5 text-right font-bold">Out</th>
+              <th className="py-2.5 text-right font-bold">Cost</th>
               <th className="px-6 py-2.5 text-right font-bold">Last used</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.masked} className="border-t border-border-soft">
+              <tr key={r.masked} className="border-t border-border-soft transition-colors hover:bg-muted/60">
                 <td className="px-6 py-2.5">
                   <span className="font-semibold">{r.label || "unnamed"}</span>
                   <code className="ml-2 font-mono text-[11px] text-muted-foreground">{r.masked}</code>
@@ -498,6 +508,7 @@ function TokenUsageCard({ rows }: { rows: TrafficData["byToken"] }) {
                 </td>
                 <td className="py-2.5 text-right text-muted-foreground tnum">{fmtNum(r.inputTokens)}</td>
                 <td className="py-2.5 text-right text-muted-foreground tnum">{fmtNum(r.outputTokens)}</td>
+                <td className="py-2.5 text-right text-muted-foreground tnum">{fmtCost(r.costUsd)}</td>
                 <td className="px-6 py-2.5 text-right text-muted-foreground tnum">
                   {r.lastAt ? `${fmtAge(Math.max(0, Math.floor((now - r.lastAt) / 1000)))} ago` : "—"}
                 </td>
@@ -532,14 +543,15 @@ function RecentTable({ rows }: { rows: TrafficData["recent"] }) {
               <th className="py-2.5 text-right font-bold">TTFT</th>
               <th className="py-2.5 text-right font-bold">Latency</th>
               <th className="py-2.5 text-right font-bold">In</th>
-              <th className="px-6 py-2.5 text-right font-bold">Out</th>
+              <th className="py-2.5 text-right font-bold">Out</th>
+              <th className="px-6 py-2.5 text-right font-bold">Cost</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r, i) => {
               const ok = r.status > 0 && r.status < 400
               return (
-                <tr key={i} className="border-t border-border-soft">
+                <tr key={i} className="border-t border-border-soft transition-colors hover:bg-muted/60">
                   <td className="whitespace-nowrap px-6 py-2.5 text-muted-foreground tnum">
                     {fmtAge(Math.floor((now - r.ts) / 1000))} ago
                   </td>
@@ -549,7 +561,7 @@ function RecentTable({ rows }: { rows: TrafficData["recent"] }) {
                     <span
                       className={cn(
                         "inline-flex items-center rounded-[6px] px-1.5 py-0.5 text-[11px] font-bold tnum",
-                        ok ? "bg-mint-soft text-positive" : "bg-[#fdecea] text-destructive",
+                        ok ? "bg-[#E6F4EA] text-positive" : "bg-[#FCE8E6] text-destructive",
                       )}
                     >
                       {r.status || "—"}
@@ -565,7 +577,8 @@ function RecentTable({ rows }: { rows: TrafficData["recent"] }) {
                   </td>
                   <td className="py-2.5 text-right tnum">{fmtLatency(r.latencyMs)}</td>
                   <td className="py-2.5 text-right text-muted-foreground tnum">{r.inputTokens || "—"}</td>
-                  <td className="px-6 py-2.5 text-right text-muted-foreground tnum">{r.outputTokens || "—"}</td>
+                  <td className="py-2.5 text-right text-muted-foreground tnum">{r.outputTokens || "—"}</td>
+                  <td className="px-6 py-2.5 text-right text-muted-foreground tnum">{fmtCost(r.costUsd)}</td>
                 </tr>
               )
             })}
